@@ -1,0 +1,24 @@
+# Ignore environment variable file with sensitive data
+.env
+
+# Ignore backup files
+*.bak
+*~
+*.swp
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore any personal testing scripts
+*_test.sh
+test_*
+
+# SSH keys and other sensitive data
+*.pem
+*.key
+id_*
