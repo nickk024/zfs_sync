@@ -22,3 +22,4 @@ test_*
 *.pem
 *.key
 id_*
+/state/

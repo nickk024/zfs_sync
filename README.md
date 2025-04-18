@@ -1,87 +1,105 @@
-# ZFS Sync
+# ZFS Sync - ZFS Dataset Replication Tool
 
-An intelligent ZFS dataset replication tool for transferring data between systems over the network.
+A modular shell script utility for reliable ZFS dataset replication between hosts.
 
 ## Features
 
 - Interactive selection of source and destination datasets
-- Support for local-to-remote, remote-to-local, local-to-local, and remote-to-remote transfers
-- Automatic detection of incremental transfer capabilities
-- Creation and management of snapshots on both sides
-- Support for recursive datasets (including child datasets)
-- Progress indicators with estimated time remaining
-- Compression support for faster transfers over slower networks
-- Resumable transfers using mbuffer
-- Cleanup of old snapshots according to retention policy
+- Automatically detects if initial full replication is needed
+- Creates and manages snapshots on both sides
+- Uses incremental sends for efficiency
+- Maintains synchronized snapshots for reliable transfers
+- Handles recursive datasets
+- Shows progress and estimated time remaining
+- Cleans up old snapshots according to retention policy
+- Robust error handling and verification
+- Supports compression and resumable transfers
 
-## Requirements
+## Project Structure
 
-- ZFS on both source and destination systems
-- SSH key-based authentication for remote systems
-- The following utilities:
-  - `pv` (for progress visualization)
-  - `mbuffer` (optional, for resumable transfers)
-  - `pigz` (optional, for faster compression)
+The project has been organized into modular components for better maintainability:
 
-## Installation
-
-1. Clone this repository or download the script files:
-
-```bash
-git clone https://github.com/yourusername/zfs_sync.git
-cd zfs_sync
+```
+zfs_sync/
+├── lib/                      # Libraries directory
+│   ├── config.sh             # Configuration handling
+│   ├── logging.sh            # Logging functions
+│   ├── utils.sh              # Utility functions
+│   ├── datasets.sh           # Dataset and snapshot management
+│   ├── transfer.sh           # ZFS transfer operations
+│   └── test.sh               # Test functionality
+├── zfs_sync.sh               # Main script with modular design
+├── test_zfs_sync.sh          # Test script for dry runs
+├── .env                      # Environment configuration
+└── README.md                 # This file
 ```
 
-2. Copy the sample environment file and customize it:
+## Prerequisites
 
-```bash
-cp .env.sample .env
-# Edit the .env file with your preferred settings
-```
-
-3. Make the script executable:
-
-```bash
-chmod +x zfs_sync.sh
-```
-
-## Usage
-
-Simply run the script and follow the interactive prompts:
-
-```bash
-./zfs_sync.sh
-```
-
-The script will:
-
-1. Check for required dependencies and install them if needed
-2. Ask you to select source and destination datasets
-3. Verify SSH connectivity to remote hosts
-4. Check for existing snapshots on both sides
-5. Determine if a full or incremental transfer is needed
-6. Create a new snapshot and perform the transfer with progress indication
-7. Clean up old snapshots according to your retention policy
+- ZFS installed on both source and destination systems
+- SSH key-based authentication set up between hosts (if transferring between different hosts)
+- Root privileges or sudo access
 
 ## Configuration
 
-You can configure defaults in the `.env` file:
+Copy `.env.sample` to `.env` and modify the settings:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| DEFAULT_SOURCE_HOST | Hostname of source system (or "local") | "local" |
-| DEFAULT_DEST_HOST | Hostname of destination system | "" |
-| DEFAULT_SSH_USER | SSH username for remote systems | "root" |
-| SNAPSHOT_PREFIX | Prefix for all created snapshots | "backup" |
-| MAX_SNAPSHOTS | Number of snapshots to keep | 5 |
-| USE_COMPRESSION | Whether to compress data during transfer | true |
-| VERIFY_TRANSFERS | Additional verification (slower but more reliable) | false |
-| RESUME_SUPPORT | Support for resumable transfers via mbuffer | true |
+```bash
+cp .env.sample .env
+nano .env
+```
+
+Available settings:
+
+- `DEFAULT_SOURCE_HOST`: Default source host (use "local" for local machine)
+- `DEFAULT_DEST_HOST`: Default destination host IP/hostname
+- `DEFAULT_SSH_USER`: Default SSH user (typically "root")
+- `SNAPSHOT_PREFIX`: Prefix for created snapshots
+- `MAX_SNAPSHOTS`: Maximum number of snapshots to keep
+- `DEBUG_MODE`: Set to "true" for additional debug output
+- `USE_COMPRESSION`: Whether to use compression in transit
+- `VERIFY_TRANSFERS`: Verify transfers (slower but more secure)
+- `RESUME_SUPPORT`: Enable resumable transfers (requires mbuffer)
+
+## Usage
+
+Run the script with:
+
+```bash
+sudo ./zfs_sync.sh
+```
+
+The script will guide you through the process:
+
+1. Select source dataset
+2. Specify destination host
+3. Select destination dataset
+4. Choose whether to include child datasets (recursive)
+5. Confirm and begin transfer
+
+## Logs
+
+Logs are stored in the `logs/` directory with timestamps.
+
+## Advanced Options
+
+The script automatically selects the optimal transfer method based on your configuration:
+
+- Uses pigz for parallel compression when available
+- Falls back to gzip when pigz is not available
+- Supports resumable transfers with mbuffer
+- Shows progress with pv
+
+## Development and Extending
+
+The modular structure makes it easy to extend or modify the script:
+
+- `config.sh`: Add or modify configuration options
+- `logging.sh`: Enhance logging capabilities
+- `utils.sh`: Add general utility functions
+- `datasets.sh`: Improve dataset management
+- `transfer.sh`: Optimize transfer methods
 
 ## License
 
-MIT License
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+This project is open source and available under the MIT License.
