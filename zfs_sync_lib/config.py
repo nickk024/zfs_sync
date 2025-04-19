@@ -29,6 +29,7 @@ def load_configuration(env_file: Path) -> dict:
     config['DEBUG_MODE'] = env_vars.get('DEBUG_MODE', 'false').lower() == 'true'
     config['SSH_TIMEOUT'] = int(env_vars.get('SSH_TIMEOUT', 10))
     config['CMD_TIMEOUT'] = int(env_vars.get('CMD_TIMEOUT', 3600)) # Not used yet, but good to have
+    config['SSH_EXTRA_OPTIONS'] = env_vars.get('SSH_EXTRA_OPTIONS', '') # Load extra SSH options as a string
 
     # --- Parse Job Definitions ---
     job_names_str = env_vars.get('ZFS_SYNC_JOB_NAMES', '')

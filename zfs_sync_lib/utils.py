@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import subprocess
+import shlex # Import shlex for parsing options
 from pathlib import Path
 
 # --- Logging Setup ---
@@ -59,8 +60,10 @@ def execute_command(command_args: list, host: str = "local", ssh_user: str = Non
         Exception: For other potential errors.
     """
     if config is None: config = {}
-    dry_run = config.get('DRY_RUN', False)
+    # Prioritize job-specific 'dry_run', fallback to global 'DRY_RUN'
+    dry_run = config.get('dry_run', config.get('DRY_RUN', False))
     ssh_timeout = config.get('SSH_TIMEOUT', 10)
+    ssh_extra_options_str = config.get('SSH_EXTRA_OPTIONS', '') # Get extra options string
     # Use job-specific timeout if available, else global, else None
     final_timeout = timeout if timeout is not None else config.get('CMD_TIMEOUT')
 
@@ -72,15 +75,26 @@ def execute_command(command_args: list, host: str = "local", ssh_user: str = Non
         if not ssh_user:
             ssh_user = config.get('DEFAULT_SSH_USER', 'root') # Use default if needed
 
-        # Base SSH command
+        # Base SSH command - Secure by default
         ssh_base = [
             "ssh",
             "-o", f"ConnectTimeout={ssh_timeout}",
             "-o", "BatchMode=yes", # Prevent password prompts
-            "-o", "StrictHostKeyChecking=no", # Consider security implications
-            "-o", "UserKnownHostsFile=/dev/null", # Consider security implications
-            f"{ssh_user}@{host}"
+            # "-o", "StrictHostKeyChecking=no", # REMOVED - Insecure Default
+            # "-o", "UserKnownHostsFile=/dev/null", # REMOVED - Insecure Default
         ]
+
+        # Add extra options from config if provided
+        if ssh_extra_options_str:
+            try:
+                extra_opts_list = shlex.split(ssh_extra_options_str)
+                ssh_base.extend(extra_opts_list)
+                logging.debug(f"Adding extra SSH options: {extra_opts_list}")
+            except Exception as e:
+                logging.error(f"Could not parse SSH_EXTRA_OPTIONS '{ssh_extra_options_str}': {e} - Ignoring.")
+
+        # Add user@host at the end
+        ssh_base.append(f"{ssh_user}@{host}")
 
         if shell:
             # If the original command needs a shell, pass it as a single string to ssh

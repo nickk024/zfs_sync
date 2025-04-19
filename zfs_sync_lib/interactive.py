@@ -92,7 +92,8 @@ def run_interactive_setup(config: dict, run_job_func):
 
     # --- Gather Parameters ---
     try:
-        # Use Rich prompts with defaults from config
+        # --- Host and SSH Configuration ---
+        console.print(Panel("[bold]Host & SSH Configuration[/bold]", expand=False, border_style="blue"))
         interactive_src_host = Prompt.ask("Enter Source Host", default=config.get('DEFAULT_SOURCE_HOST', 'local'))
         interactive_dst_host = Prompt.ask("Enter Destination Host", default=config.get('DEFAULT_DEST_HOST', ''))
         interactive_ssh_user = Prompt.ask("Enter SSH User", default=config.get('DEFAULT_SSH_USER', 'root'))
@@ -102,11 +103,13 @@ def run_interactive_setup(config: dict, run_job_func):
             sys.exit(1)
 
         # Verify SSH
-        console.print(f"Verifying SSH connectivity to [cyan]{interactive_src_host}[/] and [cyan]{interactive_dst_host}[/]...")
+        console.print(f"\nVerifying SSH connectivity to [cyan]{interactive_src_host}[/] and [cyan]{interactive_dst_host}[/]...")
         if not verify_ssh(interactive_src_host, interactive_ssh_user, config): sys.exit(1)
         if interactive_src_host != interactive_dst_host and not verify_ssh(interactive_dst_host, interactive_ssh_user, config): sys.exit(1)
-        console.print("[green]SSH connectivity verified.[/green]")
+        console.print("[green]SSH connectivity verified.[/green]\n")
 
+        # --- Dataset Selection ---
+        console.print(Panel("[bold]Dataset Selection[/bold]", expand=False, border_style="blue"))
         # Select Source Dataset using prompt_toolkit
         interactive_src_dataset = select_dataset_interactive(
             interactive_src_host, interactive_ssh_user, config, "Select Source Dataset"
@@ -116,12 +119,8 @@ def run_interactive_setup(config: dict, run_job_func):
             sys.exit(1)
         console.print(f"Selected source dataset: [cyan]{interactive_src_dataset}[/]")
 
-
         # Select Destination Dataset using prompt_toolkit (or suggest based on source)
         suggested_dst_dataset = config.get('DEFAULT_DEST_DATASET', interactive_src_dataset)
-        # Check if suggested dataset exists on destination? Could be slow.
-        # Let's offer selection or manual entry/confirmation.
-
         console.print(f"\nDestination dataset on [cyan]{interactive_dst_host}[/]:")
         use_suggestion = Confirm.ask(f"Use suggested destination '[cyan]{suggested_dst_dataset}[/]'?", default=True)
 
@@ -134,17 +133,27 @@ def run_interactive_setup(config: dict, run_job_func):
             if not interactive_dst_dataset:
                 console.print("[yellow]Destination dataset selection cancelled.[/yellow]")
                 sys.exit(1)
-        console.print(f"Selected destination dataset: [cyan]{interactive_dst_dataset}[/]")
+        console.print(f"Selected destination dataset: [cyan]{interactive_dst_dataset}[/]\n")
 
-
-        # Other Options (using Rich prompts)
+        # --- Transfer Options ---
+        console.print(Panel("[bold]Transfer Options[/bold]", expand=False, border_style="blue"))
         interactive_recursive = Confirm.ask("Recursive transfer?", default=config.get('DEFAULT_RECURSIVE', True))
         interactive_compression = Confirm.ask("Use compression during transfer?", default=config.get('DEFAULT_USE_COMPRESSION', True))
-        interactive_resume = Confirm.ask("Enable resume support (requires intermediate snapshot)?", default=config.get('DEFAULT_RESUME_SUPPORT', True))
-        interactive_direct_remote = Confirm.ask("Direct remote-to-remote transfer (if applicable)?", default=config.get('DEFAULT_DIRECT_REMOTE_TRANSFER', False))
+        interactive_resume = Confirm.ask("Enable resume support for initial transfer?", default=config.get('DEFAULT_RESUME_SUPPORT', True))
+        # interactive_direct_remote = Confirm.ask("Direct remote-to-remote transfer (if applicable)?", default=config.get('DEFAULT_DIRECT_REMOTE_TRANSFER', False)) # Removed R2R
+        interactive_direct_remote = False # Hardcode to False as R2R is removed
+        console.print("") # Spacer
 
+        # --- Snapshot Options ---
+        console.print(Panel("[bold]Snapshot Options[/bold]", expand=False, border_style="blue"))
         interactive_snapshot_prefix = Prompt.ask("Enter Snapshot Prefix", default=config.get('DEFAULT_SNAPSHOT_PREFIX', 'zfs-sync'))
         interactive_max_snapshots = IntPrompt.ask("Enter Max Snapshots to keep on destination", default=config.get('DEFAULT_MAX_SNAPSHOTS', 5))
+        console.print("") # Spacer
+
+        # --- Execution Options ---
+        console.print(Panel("[bold]Execution Options[/bold]", expand=False, border_style="blue"))
+        interactive_dry_run = Confirm.ask("Perform a dry run (show commands without executing)?", default=False)
+        console.print("") # Spacer
 
         # --- Create Job Config Dictionary ---
         interactive_job_config = {
@@ -160,7 +169,8 @@ def run_interactive_setup(config: dict, run_job_func):
             'use_compression': interactive_compression,
             'resume_support': interactive_resume,
             'direct_remote_transfer': interactive_direct_remote,
-            'sync_snapshot': f"{interactive_snapshot_prefix}-sync" # Intermediate snapshot name
+            'sync_snapshot': f"{interactive_snapshot_prefix}-sync", # Intermediate snapshot name
+            'dry_run': interactive_dry_run
         }
 
         # --- Display Summary ---
@@ -175,11 +185,15 @@ def run_interactive_setup(config: dict, run_job_func):
         summary_table.add_row("Direct Remote", str(interactive_direct_remote))
         summary_table.add_row("Snapshot Prefix", interactive_snapshot_prefix)
         summary_table.add_row("Max Snapshots", str(interactive_max_snapshots))
+        summary_table.add_row("Dry Run", "[yellow]Yes[/yellow]" if interactive_dry_run else "No")
         console.print(summary_table)
 
         # --- Confirm and Run ---
         if Confirm.ask("Proceed with this configuration?", default=True):
-            console.print("[bold green]Starting synchronization...[/bold green]")
+            if interactive_dry_run:
+                console.print("[bold yellow]Starting dry run...[/bold yellow]")
+            else:
+                console.print("[bold green]Starting synchronization...[/bold green]")
             # Call the run_job function passed from the main script
             success = run_job_func(interactive_job_config, config)
             sys.exit(0 if success else 1)

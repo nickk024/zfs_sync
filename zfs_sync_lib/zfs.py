@@ -124,8 +124,12 @@ def create_snapshot(dataset: str, snapshot_name: str, recursive: bool, host: str
 
 
 def clean_old_snapshots(dataset: str, prefix: str, keep: int, host: str, ssh_user: str, config: dict):
-    """Cleans up old snapshots matching a prefix, keeping the newest N."""
+    """Cleans up old snapshots matching a prefix, keeping the newest N, ensuring the sync snapshot is not deleted."""
     logging.info(f"Cleaning old snapshots with prefix '{prefix}' on {host}:{dataset} (keeping newest {keep})...")
+    # Get the sync snapshot name specific to this job/config
+    sync_snapshot_name = config.get('sync_snapshot') # e.g., 'backup-sync'
+    full_sync_snapshot_name = f"{dataset}@{sync_snapshot_name}" if sync_snapshot_name else None
+
     try:
         # Get all snapshots for the dataset, sorted reverse (newest first)
         cmd_result = execute_command(
@@ -158,6 +162,11 @@ def clean_old_snapshots(dataset: str, prefix: str, keep: int, host: str, ssh_use
     removed_count = 0
     failed_count = 0
     for snap_to_remove in snapshots_to_remove:
+        # --- Safety Check: Never delete the sync snapshot ---
+        if full_sync_snapshot_name and snap_to_remove == full_sync_snapshot_name:
+            logging.debug(f"Skipping removal of sync snapshot: {snap_to_remove}")
+            continue # Skip to the next snapshot
+
         logging.debug(f"Attempting to remove snapshot: {snap_to_remove}")
         try:
             # Assuming recursive destroy is usually desired for snapshots matching a prefix
@@ -293,6 +302,27 @@ def cleanup_incomplete_snapshots(dataset: str, host: str, ssh_user: str, config:
             # Error is logged by execute_command
 
     logging.info(f"Incomplete snapshot cleanup summary: Removed {removed_count}, Failed {failed_count}")
+
+def get_receive_resume_token(dataset: str, host: str, ssh_user: str, config: dict) -> Optional[str]:
+    """Gets the receive_resume_token property for a dataset, if it exists."""
+    logging.debug(f"Checking for receive_resume_token on {host}:{dataset}")
+    cmd = ['zfs', 'get', '-Hp', '-o', 'value', 'receive_resume_token', dataset]
+    try:
+        result = execute_command(cmd, host=host, ssh_user=ssh_user, config=config, check=True, capture_output=True)
+        token = result.stdout.strip()
+        if token and token != '-':
+            logging.info(f"Found valid receive_resume_token on {host}:{dataset}")
+            return token
+        else:
+            logging.debug(f"No valid receive_resume_token found on {host}:{dataset} (value: '{token}')")
+            return None
+    except subprocess.CalledProcessError:
+        # This likely means the dataset doesn't exist or property isn't set (which is fine)
+        logging.debug(f"Could not get receive_resume_token for {host}:{dataset} (dataset/property likely doesn't exist).")
+        return None
+    except Exception as e:
+        logging.error(f"Error getting receive_resume_token for {host}:{dataset}: {e}")
+        return None
 
 def estimate_transfer_size(dataset: str, host: str, ssh_user: str, config: dict,
                            base_snapshot: Optional[str] = None, new_snapshot: Optional[str] = None) -> Optional[int]:

@@ -13,7 +13,7 @@ from rich.progress import Progress, BarColumn, TextColumn, TransferSpeedColumn, 
 
 # Import necessary functions from other modules
 from .utils import execute_command, check_command_exists
-from .zfs import estimate_transfer_size # Import the new function
+from .zfs import estimate_transfer_size, get_receive_resume_token # Import the new functions
 
 # --- Stderr Processing Thread ---
 
@@ -120,6 +120,15 @@ def execute_transfer_pipeline(pipeline_cmds: List[List[str]], config: dict, prog
     stderr_pipe_read_end = None
     stderr_thread = None
     success = False
+    dry_run = config.get('dry_run', config.get('DRY_RUN', False)) # Check dry run flag
+
+    if dry_run:
+        logging.info("[DRY RUN] Would execute pipeline:")
+        for i, cmd_args in enumerate(pipeline_cmds):
+            logging.info(f"[DRY RUN] Stage {i}: {' '.join(cmd_args)}")
+        # Simulate success for dry run
+        progress.update(task_id, completed=progress.tasks[task_id].total or 1, total=progress.tasks[task_id].total or 1)
+        return True
 
     try:
         # Start all processes in the pipeline
@@ -235,21 +244,35 @@ def perform_full_transfer(job_config: dict, config: dict, new_snapshot_name: str
     send_cmd_base_list = ['zfs', 'send', '-p'] # Add -p to preserve properties
     recv_cmd_base_list = ['zfs', 'receive', '-s', '-u', '-v']
 
-    # Check for resume token
+    # Check for resume token if resume support is enabled
     resume_token = None
     send_args_list = []
-    # ... (resume token check logic - simplified for brevity, assume it sets send_args_list) ...
+    using_resume_token = False
     if job_config.get('resume_support', False):
-        # ... check token ...
-        # if found: send_args_list = ['-t', resume_token]
-        # else: send_args_list = [f"{src_dataset}@{new_snapshot_name}"]
-        pass # Simplified: Assume new transfer for now
-    send_args_list = [f"{src_dataset}@{new_snapshot_name}"] # Assume new transfer
+        logging.info("Resume support enabled, checking for token on destination...")
+        resume_token = get_receive_resume_token(dst_dataset, dst_host, ssh_user, run_config)
+        if resume_token:
+            logging.info(f"Found resume token. Attempting to resume transfer with 'zfs send -t {resume_token}'")
+            send_args_list = ['-t', resume_token]
+            using_resume_token = True
+            # Size estimation might be inaccurate or impossible for resumed transfers
+            if total_size is not None:
+                logging.warning("Resuming transfer, initial size estimate may not reflect remaining data.")
+                # Optionally reset total_size to None for indeterminate progress bar?
+                # total_size = None
+        else:
+            logging.info("No resume token found on destination. Proceeding with normal full send.")
+            send_args_list = [f"{src_dataset}@{new_snapshot_name}"]
+    else:
+        # Resume not enabled, use standard full send
+        send_args_list = [f"{src_dataset}@{new_snapshot_name}"]
 
     send_cmd_list = send_cmd_base_list[:]
-    if '-t' not in send_args_list:
+    # Add flags like -R only if NOT using a resume token (-t implies the original flags)
+    # Add -v for progress parsing only if NOT using a resume token (stderr format differs)
+    if not using_resume_token:
         if recursive: send_cmd_list.append('-R')
-        send_cmd_list.append('-v') # Crucial for progress parsing
+        send_cmd_list.append('-v') # Add verbose for progress parsing
     send_cmd_list.extend(send_args_list)
 
     # --- Construct Pipeline Stages ---
@@ -264,7 +287,16 @@ def perform_full_transfer(job_config: dict, config: dict, new_snapshot_name: str
         pipeline_stages.append(compress_cmd_list)
 
     # Intermediate/Destination stages
-    ssh_opts = ["-o", f"ConnectTimeout={config['SSH_TIMEOUT']}", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+    # Base SSH options - Secure by default
+    ssh_base_opts = ["-o", f"ConnectTimeout={config['SSH_TIMEOUT']}", "-o", "BatchMode=yes"]
+    # Add extra options from config if provided
+    ssh_extra_options_str = run_config.get('SSH_EXTRA_OPTIONS', '')
+    if ssh_extra_options_str:
+        try:
+            extra_opts_list = shlex.split(ssh_extra_options_str)
+            ssh_base_opts.extend(extra_opts_list)
+        except Exception as e:
+            logging.error(f"Could not parse SSH_EXTRA_OPTIONS '{ssh_extra_options_str}' for pipeline: {e} - Ignoring.")
 
     if src_host == "local" and dst_host == "local":
         if decompress_cmd_list: pipeline_stages.append(decompress_cmd_list)
@@ -275,39 +307,19 @@ def perform_full_transfer(job_config: dict, config: dict, new_snapshot_name: str
         remote_cmd_list.extend(recv_cmd_base_list + [dst_dataset])
         # Join the remote command list into a single string for SSH execution
         remote_cmd_str = " ".join(remote_cmd_list)
-        pipeline_stages.append(["ssh"] + ssh_opts + [f"{ssh_user}@{dst_host}", remote_cmd_str])
+        pipeline_stages.append(["ssh"] + ssh_base_opts + [f"{ssh_user}@{dst_host}", remote_cmd_str])
     elif dst_host == "local":
         # Need to run the source part via SSH
         pipeline_stages.pop() # Remove local send command
         remote_cmd_str = " ".join(current_stage_cmd) # Send command
         if compress_cmd_list: remote_cmd_str += f" | {' '.join(compress_cmd_list)}"
-        pipeline_stages.insert(0, ["ssh"] + ssh_opts + [f"{ssh_user}@{src_host}", remote_cmd_str]) # Add SSH send at beginning
+        pipeline_stages.insert(0, ["ssh"] + ssh_base_opts + [f"{ssh_user}@{src_host}", remote_cmd_str]) # Add SSH send at beginning
         # Add decompression and receive locally
         if decompress_cmd_list: pipeline_stages.append(decompress_cmd_list)
         pipeline_stages.append(recv_cmd_base_list + [dst_dataset])
-    else:
-        # Remote to remote - Complex to manage pipes AND progress easily.
-        # Falling back to simpler shell execution for R2R for now.
-        # TODO: Implement R2R with Popen if needed.
-        logging.warning("Remote-to-remote transfer with TUI progress not fully implemented, using basic execution.")
-        # Reconstruct the shell pipeline string from previous implementation
-        source_part = " ".join(send_cmd_list)
-        if compress_cmd: source_part += f" | {compress_cmd}"
-        dest_part = " ".join(recv_cmd_base_list) + f" {shlex.quote(dst_dataset)}"
-        if decompress_cmd: dest_part = f"{decompress_cmd} | {dest_part}"
-        ssh_prefix = f"ssh {' '.join(ssh_opts)} {shlex.quote(f'{ssh_user}@{src_host}')}"
-        ssh_suffix = f"ssh {' '.join(ssh_opts)} {shlex.quote(f'{ssh_user}@{dst_host}')}"
-        if job_config.get('direct_remote_transfer', False):
-             source_part_with_pv = f"{source_part} | pv -pterab" # Add pv back for R2R
-             pipeline_str = f"{ssh_prefix} {shlex.quote(source_part_with_pv)} | {ssh_suffix} {shlex.quote(dest_part)}"
-        else:
-             pipeline_str = f"{ssh_prefix} {shlex.quote(source_part)} | pv -pterab | {ssh_suffix} {shlex.quote(dest_part)}" # Add pv back
-
-        try:
-            execute_command(pipeline_str, host="local", config=run_config, check=True, shell=True)
-            return True
-        except Exception:
-            return False
+    else: # Both hosts are remote
+        logging.error("Remote-to-remote transfers are not supported in this version.")
+        return False
 
 
     # --- Execute Pipeline with Progress ---
@@ -376,7 +388,15 @@ def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_na
         pipeline_stages.append(compress_cmd_list)
 
     # Intermediate/Destination stages (similar logic to full transfer)
-    ssh_opts = ["-o", f"ConnectTimeout={config['SSH_TIMEOUT']}", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+    # Base SSH options - Secure by default (same logic as full transfer)
+    ssh_base_opts = ["-o", f"ConnectTimeout={config['SSH_TIMEOUT']}", "-o", "BatchMode=yes"]
+    ssh_extra_options_str = run_config.get('SSH_EXTRA_OPTIONS', '')
+    if ssh_extra_options_str:
+        try:
+            extra_opts_list = shlex.split(ssh_extra_options_str)
+            ssh_base_opts.extend(extra_opts_list)
+        except Exception as e:
+            logging.error(f"Could not parse SSH_EXTRA_OPTIONS '{ssh_extra_options_str}' for pipeline: {e} - Ignoring.")
 
     if src_host == "local" and dst_host == "local":
         if decompress_cmd_list: pipeline_stages.append(decompress_cmd_list)
@@ -386,18 +406,17 @@ def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_na
         if decompress_cmd_list: remote_cmd_list.extend(decompress_cmd_list + ['|'])
         remote_cmd_list.extend(recv_cmd_base_list + [dst_dataset])
         remote_cmd_str = " ".join(remote_cmd_list)
-        pipeline_stages.append(["ssh"] + ssh_opts + [f"{ssh_user}@{dst_host}", remote_cmd_str])
+        pipeline_stages.append(["ssh"] + ssh_base_opts + [f"{ssh_user}@{dst_host}", remote_cmd_str])
     elif dst_host == "local":
         pipeline_stages.pop() # Remove local send
         remote_cmd_list = send_cmd_base_list[:] # Base send command
         if compress_cmd_list: remote_cmd_list = remote_cmd_list + ['|'] + compress_cmd_list
         remote_cmd_str = " ".join(remote_cmd_list) # Join for SSH
-        pipeline_stages.insert(0, ["ssh"] + ssh_opts + [f"{ssh_user}@{src_host}", remote_cmd_str])
+        pipeline_stages.insert(0, ["ssh"] + ssh_base_opts + [f"{ssh_user}@{src_host}", remote_cmd_str])
         if decompress_cmd_list: pipeline_stages.append(decompress_cmd_list)
         pipeline_stages.append(recv_cmd_base_list + [dst_dataset])
-    else:
-        # Remote to remote - Not supported
-        logging.error("Remote-to-remote transfers are not supported in this script version.")
+    else: # Both hosts are remote
+        logging.error("Remote-to-remote transfers are not supported in this version.")
         return False
 
 
