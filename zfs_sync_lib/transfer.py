@@ -353,8 +353,8 @@ def perform_full_transfer(job_config: dict, config: dict, new_snapshot_name: str
         return False
 
 
-def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_name: str, base_snapshot_name: str, force_rollback: bool = False) -> bool:
-    """Performs an incremental ZFS transfer with Rich progress, optionally forcing rollback."""
+def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_name: str, base_snapshot_name: str) -> bool:
+    """Performs an incremental ZFS transfer with Rich progress."""
     src_host = job_config['source_host']
     src_dataset = job_config['source_dataset']
     dst_host = job_config['dest_host']
@@ -365,8 +365,7 @@ def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_na
 
     logging.info("Performing incremental transfer...")
     logging.info(f"Using snapshots: {src_dataset}@{base_snapshot_name} -> {src_dataset}@{new_snapshot_name}")
-    if force_rollback:
-        logging.warning("Forcing rollback on destination (zfs recv -F) due to snapshot GUID mismatch.")
+    # Removed force_rollback logic
 
     # --- Estimate Size ---
     total_size = estimate_transfer_size(src_dataset, src_host, ssh_user, run_config,
@@ -377,8 +376,7 @@ def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_na
     # --- Prepare Commands ---
     send_cmd_base_list = ['zfs', 'send', '-p'] # Add -p to preserve properties
     recv_cmd_base_list = ['zfs', 'receive', '-u', '-v'] # -u update, -v verbose
-    if force_rollback:
-        recv_cmd_base_list.append('-F') # Add force flag
+    # Removed force_rollback logic adding -F
 
     if recursive: send_cmd_base_list.append('-R')
     # Add incremental flags - quoting handled by Popen
