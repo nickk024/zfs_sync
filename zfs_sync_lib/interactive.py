@@ -1,6 +1,8 @@
 import logging
 import sys
-from typing import Optional, List, Tuple
+import json
+from pathlib import Path
+from typing import Optional, List, Tuple, Dict, Any
 
 # Rich for TUI elements (still used for other prompts and output)
 from rich.console import Console
@@ -25,6 +27,35 @@ dialog_style = Style.from_dict({
     'dialog.body':        'bg:#888888 #000000',
     'button':             'bg:#000000 #ffffff',
 })
+
+# --- State Management ---
+STATE_FILE_PATH = Path('.zfs_sync_interactive_state.json') # Store in current dir
+
+def _load_interactive_state(state_file: Path) -> Dict[str, Any]:
+    """Loads the last interactive state from a JSON file."""
+    if state_file.is_file():
+        try:
+            with state_file.open('r') as f:
+                state = json.load(f)
+                logging.debug(f"Loaded interactive state from {state_file}: {state}")
+                return state if isinstance(state, dict) else {}
+        except (json.JSONDecodeError, OSError) as e:
+            logging.warning(f"Could not load or parse state file {state_file}: {e}")
+            return {}
+    else:
+        logging.debug(f"Interactive state file {state_file} not found.")
+        return {}
+
+def _save_interactive_state(state_file: Path, state_data: Dict[str, Any]):
+    """Saves the current interactive state to a JSON file."""
+    try:
+        with state_file.open('w') as f:
+            json.dump(state_data, f, indent=4)
+        logging.debug(f"Saved interactive state to {state_file}: {state_data}")
+    except OSError as e:
+        logging.warning(f"Could not save state file {state_file}: {e}")
+
+# --- Interactive Functions ---
 
 def get_datasets_interactive(host: str, ssh_user: str, config: dict) -> List[str]:
     """Fetches datasets from a host for interactive selection."""
@@ -92,11 +123,27 @@ def run_interactive_setup(config: dict, run_job_func):
 
     # --- Gather Parameters ---
     try:
+        # Load last used state
+        last_state = _load_interactive_state(STATE_FILE_PATH)
+
         # --- Host and SSH Configuration ---
         console.print(Panel("[bold]Host & SSH Configuration[/bold]", expand=False, border_style="blue"))
-        interactive_src_host = Prompt.ask("Enter Source Host", default=config.get('DEFAULT_SOURCE_HOST', 'local'))
-        interactive_dst_host = Prompt.ask("Enter Destination Host", default=config.get('DEFAULT_DEST_HOST', ''))
-        interactive_ssh_user = Prompt.ask("Enter SSH User", default=config.get('DEFAULT_SSH_USER', 'root'))
+        # Use last state value if available, otherwise use config default
+        default_src_host = last_state.get('last_src_host', config.get('DEFAULT_SOURCE_HOST', 'local'))
+        default_dst_host = last_state.get('last_dst_host', config.get('DEFAULT_DEST_HOST', ''))
+        default_ssh_user = last_state.get('last_ssh_user', config.get('DEFAULT_SSH_USER', 'root'))
+
+        interactive_src_host = Prompt.ask("Enter Source Host", default=default_src_host)
+        interactive_dst_host = Prompt.ask("Enter Destination Host", default=default_dst_host)
+        interactive_ssh_user = Prompt.ask("Enter SSH User", default=default_ssh_user)
+
+        # Save the newly entered values
+        current_state = {
+            'last_src_host': interactive_src_host,
+            'last_dst_host': interactive_dst_host,
+            'last_ssh_user': interactive_ssh_user,
+        }
+        _save_interactive_state(STATE_FILE_PATH, current_state)
 
         if not interactive_dst_host:
             console.print("[bold red]Error:[/bold red] Destination Host is required.")
