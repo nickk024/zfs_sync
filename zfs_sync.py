@@ -12,9 +12,9 @@ from pathlib import Path
 from zfs_sync_lib.config import load_configuration
 from zfs_sync_lib.utils import setup_logging, check_prerequisites, verify_ssh
 from zfs_sync_lib.zfs import (
-    has_dataset, find_verified_common_snapshots, create_snapshot,
+    has_dataset, find_common_snapshots, create_snapshot, # Renamed find_verified_common_snapshots
     setup_sync_snapshot, clean_old_snapshots, get_snapshot,
-    cleanup_incomplete_snapshots # Added missing import
+    cleanup_incomplete_snapshots
 )
 from zfs_sync_lib.transfer import perform_full_transfer, perform_incremental_transfer
 from zfs_sync_lib.interactive import run_interactive_setup # Import interactive setup
@@ -84,40 +84,55 @@ def run_job(job_config: dict, config: dict) -> bool:
         # Determine transfer type
         logging.info("Checking snapshot status and determining transfer type...")
         needs_initial_transfer = False
+        force_rollback = False # Flag for using zfs recv -F
         sync_snapshot_src = "" # Base snapshot for incremental
+        dry_run = run_config.get('dry_run', run_config.get('DRY_RUN', False))
 
         if not dest_exists:
             logging.info("Destination dataset does not exist. Performing full initial transfer.")
             needs_initial_transfer = True
         else:
-            # Destination exists, check for common snapshots to decide transfer type
-            # The perform_full_transfer function will handle checking for a resume token internally if needed.
-            logging.info("Destination exists. Checking for verified common snapshots...")
-            common_snapshots = find_verified_common_snapshots(
+            # Destination exists, check for common snapshots
+            logging.info("Destination exists. Checking for common snapshots...")
+            verified_common_snaps, latest_name_match = find_common_snapshots(
                 source_dataset, source_host, dest_dataset, dest_host, ssh_user, run_config
             )
 
-            if not common_snapshots:
-                logging.warning("No verified common snapshots found between source and destination.")
-                # Check if source has *any* snapshots
-                try:
-                    snap_check_cmd = execute_command(
-                        ['zfs', 'list', '-t', 'snapshot', '-o', 'name', '-H', '-d', '1', source_dataset],
-                         host=source_host, ssh_user=ssh_user, config=run_config, check=False, capture_output=True
-                    )
-                    if not snap_check_cmd.stdout.strip():
-                         logging.info("Source dataset has no snapshots. Performing full initial transfer.")
-                    else:
-                         logging.warning("Source has snapshots, but none match destination GUIDs. Performing full initial transfer.")
-                except Exception:
-                     logging.warning("Could not check source snapshots. Assuming full initial transfer needed.")
-
-                needs_initial_transfer = True
-            else:
-                # Use the latest verified common snapshot (first in the sorted list)
-                sync_snapshot_src = common_snapshots[0]
+            if verified_common_snaps:
+                # Use the latest verified common snapshot
+                sync_snapshot_src = verified_common_snaps[0]
                 logging.info(f"Found verified common snapshot for incremental base: {sync_snapshot_src}")
                 needs_initial_transfer = False
+                force_rollback = False
+            elif latest_name_match:
+                # No GUID match, but a name match exists (e.g., backup-sync)
+                # Attempt a forced incremental using the latest name match as base
+                sync_snapshot_src = latest_name_match
+                logging.warning(f"No snapshots with matching GUIDs found. Newest name match is '{sync_snapshot_src}'.")
+                logging.warning(f"Attempting incremental transfer with forced rollback (zfs recv -F).")
+                needs_initial_transfer = False
+                force_rollback = True
+            else:
+                # No common snapshots found by GUID or name
+                logging.warning("No common snapshots found by GUID or name.")
+                # Check if source has *any* snapshots (only if not dry run, as list works in dry run)
+                if not dry_run:
+                    try:
+                        snap_check_cmd = execute_command(
+                            ['zfs', 'list', '-t', 'snapshot', '-o', 'name', '-H', '-d', '1', source_dataset],
+                            host=source_host, ssh_user=ssh_user, config=run_config, check=False, capture_output=True
+                        )
+                        if not snap_check_cmd.stdout.strip():
+                            logging.info("Source dataset has no snapshots. Performing full initial transfer.")
+                        else:
+                            logging.warning("Source has snapshots, but none match destination. Performing full initial transfer.")
+                    except Exception:
+                        logging.warning("Could not check source snapshots. Assuming full initial transfer needed.")
+                else:
+                     logging.info("[DRY RUN] Assuming full initial transfer needed as no common snapshots found.")
+
+                needs_initial_transfer = True
+                force_rollback = False
 
         # Create timestamp for new snapshot
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -136,8 +151,8 @@ def run_job(job_config: dict, config: dict) -> bool:
                 # Create sync snapshot after successful full transfer
                 setup_sync_snapshot(source_host, source_dataset, dest_host, dest_dataset,
                                     new_snapshot_name, sync_snapshot_name, ssh_user, recursive, True, run_config)
-        else:
-            transfer_success = perform_incremental_transfer(job_config, config, new_snapshot_name, sync_snapshot_src)
+        else: # Incremental or Forced Incremental
+            transfer_success = perform_incremental_transfer(job_config, config, new_snapshot_name, sync_snapshot_src, force_rollback=force_rollback)
             if transfer_success:
                  # Update sync snapshot after successful incremental transfer
                  setup_sync_snapshot(source_host, source_dataset, dest_host, dest_dataset,

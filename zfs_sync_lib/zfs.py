@@ -73,29 +73,47 @@ def get_snapshots_with_guids(dataset: str, host: str, ssh_user: str, config: dic
         return {} # Return empty dict on failure
 
 
-def find_verified_common_snapshots(src_dataset: str, src_host: str, dst_dataset: str, dst_host: str, ssh_user: str, config: dict) -> list:
-    """Finds snapshots common to source and destination by comparing name and guid."""
-    logging.info("Checking for verified common snapshots (matching name and guid)...")
+def find_common_snapshots(src_dataset: str, src_host: str, dst_dataset: str, dst_host: str, ssh_user: str, config: dict) -> tuple[list[str], Optional[str]]:
+    """
+    Finds snapshots common to source and destination.
+
+    Returns:
+        A tuple containing:
+        - A list of snapshot names verified common by GUID (newest first).
+        - The name of the newest snapshot found on both by name only (even if GUIDs differ), or None.
+    """
+    logging.info("Checking for common snapshots...")
     src_snaps = get_snapshots_with_guids(src_dataset, src_host, ssh_user, config)
     dst_snaps = get_snapshots_with_guids(dst_dataset, dst_host, ssh_user, config)
 
     common_verified_snaps = []
-    for snap_name, src_guid in src_snaps.items():
-        if snap_name in dst_snaps and dst_snaps[snap_name] == src_guid:
-            logging.debug(f"Found verified common snapshot: {snap_name} (GUID: {src_guid})")
-            common_verified_snaps.append(snap_name)
-        elif snap_name in dst_snaps:
-            logging.debug(f"Snapshot '{snap_name}' exists on both, but GUIDs differ (Src: {src_guid}, Dst: {dst_snaps[snap_name]}). Not common.")
+    common_by_name_only = []
 
-    # Sort by name (often includes timestamp) - reverse for newest first
+    for snap_name, src_guid in src_snaps.items():
+        if snap_name in dst_snaps:
+            if dst_snaps[snap_name] == src_guid:
+                logging.debug(f"Found verified common snapshot: {snap_name} (GUID: {src_guid})")
+                common_verified_snaps.append(snap_name)
+            else:
+                logging.debug(f"Snapshot '{snap_name}' exists on both, but GUIDs differ (Src: {src_guid}, Dst: {dst_snaps[snap_name]}).")
+                common_by_name_only.append(snap_name)
+
+    # Sort both lists by name (often includes timestamp) - reverse for newest first
     common_verified_snaps.sort(reverse=True)
+    common_by_name_only.sort(reverse=True)
+
+    latest_name_match = common_by_name_only[0] if common_by_name_only else None
 
     if not common_verified_snaps:
-        logging.info("No verified common snapshots found.")
+        logging.info("No verified (GUID matching) common snapshots found.")
+        if latest_name_match:
+            logging.info(f"Newest snapshot existing on both by name only: {latest_name_match}")
     else:
-        logging.info(f"Found {len(common_verified_snaps)} verified common snapshots.")
+        logging.info(f"Found {len(common_verified_snaps)} verified common snapshots (newest: {common_verified_snaps[0]}).")
+        if latest_name_match and latest_name_match not in common_verified_snaps:
+             logging.debug(f"Newest name-only match ({latest_name_match}) differs from newest verified match.")
 
-    return common_verified_snaps
+    return common_verified_snaps, latest_name_match
 
 
 def create_snapshot(dataset: str, snapshot_name: str, recursive: bool, host: str, ssh_user: str, config: dict) -> bool:
