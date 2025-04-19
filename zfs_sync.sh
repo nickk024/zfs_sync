@@ -297,9 +297,14 @@ main() {
           error "No valid jobs selected to run."
       fi
   else
-      # Default behavior: No jobs specified, show help.
-      log "No specific job requested and --all-jobs not specified."
-      usage
+      # Default behavior: No jobs specified, run interactive setup.
+      log "No job specified. Starting interactive setup..."
+      # Call a new function to handle interactive setup
+      # This function needs to be defined, likely in lib/interactive.sh or lib/utils.sh
+      # For now, we assume it exists and will handle running the job or exiting.
+      run_interactive_setup
+      # Exit after interactive mode completes, assuming it handles its own execution.
+      exit $?
   fi
 
   # Execute the selected jobs

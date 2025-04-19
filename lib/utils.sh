@@ -131,3 +131,104 @@ execute_or_log_command() {
     fi
   fi
 }
+
+# Interactive setup function
+run_interactive_setup() {
+  log "Starting Interactive Setup..."
+
+  # Load defaults from .env if available (config should have been loaded already)
+  local default_src_host=${DEFAULT_SOURCE_HOST:-"local"}
+  local default_dst_host=${DEFAULT_DEST_HOST:-""}
+  local default_ssh_user=${DEFAULT_SSH_USER:-"root"}
+  local default_src_dataset=${DEFAULT_SOURCE_DATASET:-""}
+  local default_dst_dataset=${DEFAULT_DEST_DATASET:-""}
+  local default_recursive=${DEFAULT_RECURSIVE:-"true"}
+  local default_compression=${DEFAULT_USE_COMPRESSION:-"true"}
+  local default_resume=${DEFAULT_RESUME_SUPPORT:-"true"}
+  local default_snapshot_prefix=${DEFAULT_SNAPSHOT_PREFIX:-"backup"}
+  local default_max_snapshots=${DEFAULT_MAX_SNAPSHOTS:-5}
+
+  # --- Gather Parameters ---
+  echo "--- Interactive Configuration ---"
+
+  # Source Host
+  echo -n "Enter Source Host [$default_src_host]: "
+  read interactive_src_host
+  interactive_src_host=${interactive_src_host:-$default_src_host}
+
+  # Destination Host
+  echo -n "Enter Destination Host [$default_dst_host]: "
+  read interactive_dst_host
+  interactive_dst_host=${interactive_dst_host:-$default_dst_host}
+  if [[ -z "$interactive_dst_host" ]]; then error "Destination Host is required."; fi
+
+  # SSH User
+  echo -n "Enter SSH User [$default_ssh_user]: "
+  read interactive_ssh_user
+  interactive_ssh_user=${interactive_ssh_user:-$default_ssh_user}
+
+  # Verify SSH connections before proceeding
+  log "Verifying SSH connectivity..."
+  verify_ssh "$interactive_src_host" "$interactive_ssh_user"
+  verify_ssh "$interactive_dst_host" "$interactive_ssh_user"
+  log "SSH connectivity verified."
+
+  # Source Dataset (using select_dataset from datasets.sh)
+  # Need to make sure select_dataset is sourced or available
+  # Assuming datasets.sh is sourced by the main script
+  interactive_src_dataset=$(select_dataset "$interactive_src_host" "Select Source Dataset" "$default_src_dataset" "$interactive_ssh_user")
+  if [[ -z "$interactive_src_dataset" ]]; then error "Source Dataset is required."; fi
+
+  # Destination Dataset
+  local suggested_dst_dataset=${default_dst_dataset:-$interactive_src_dataset}
+  echo -n "Enter Destination Dataset [$suggested_dst_dataset]: "
+  read interactive_dst_dataset
+  interactive_dst_dataset=${interactive_dst_dataset:-$suggested_dst_dataset}
+  if [[ -z "$interactive_dst_dataset" ]]; then error "Destination Dataset is required."; fi
+
+  # Other Options (using prompt_yes_no)
+  prompt_yes_no "Recursive transfer?" "$default_recursive" && interactive_recursive="true" || interactive_recursive="false"
+  prompt_yes_no "Use compression?" "$default_compression" && interactive_compression="true" || interactive_compression="false"
+  prompt_yes_no "Enable resume support?" "$default_resume" && interactive_resume="true" || interactive_resume="false"
+
+  # Snapshot Prefix
+  echo -n "Enter Snapshot Prefix [$default_snapshot_prefix]: "
+  read interactive_snapshot_prefix
+  interactive_snapshot_prefix=${interactive_snapshot_prefix:-$default_snapshot_prefix}
+
+  # Max Snapshots
+  echo -n "Enter Max Snapshots to keep [$default_max_snapshots]: "
+  read interactive_max_snapshots
+  interactive_max_snapshots=${interactive_max_snapshots:-$default_max_snapshots}
+  # Basic validation for number
+  if ! [[ "$interactive_max_snapshots" =~ ^[0-9]+$ ]]; then
+      error "Max Snapshots must be a number."
+  fi
+
+  echo "--- Configuration Summary ---"
+  log "Interactive Configuration Summary:"
+  log "  Source:           $interactive_ssh_user@$interactive_src_host:$interactive_src_dataset"
+  log "  Destination:      $interactive_ssh_user@$interactive_dst_host:$interactive_dst_dataset"
+  log "  Recursive:        $interactive_recursive"
+  log "  Snapshot Prefix:  $interactive_snapshot_prefix"
+  log "  Max Snapshots:    $interactive_max_snapshots"
+  log "  Compression:      $interactive_compression"
+  log "  Resume Support:   $interactive_resume"
+  log "---"
+
+  # Confirm before running
+  if ! prompt_yes_no "Proceed with this configuration?" "y"; then
+      log "User aborted interactive setup."
+      exit 1
+  fi
+
+  # --- Execute the Job ---
+  # We need to call a modified run_job or a new function that accepts these params
+  # For now, let's just log that we would run it.
+  # TODO: Refactor run_job or create run_job_interactive
+  log "[INTERACTIVE MODE] Would now execute the sync job with the above parameters."
+  log "Need to refactor run_job to accept parameters instead of job_name."
+
+  # Placeholder exit code
+  return 0
+}
