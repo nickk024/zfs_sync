@@ -23,7 +23,7 @@ def load_configuration(env_file: Path) -> dict:
     config['DEFAULT_RECURSIVE'] = env_vars.get('DEFAULT_RECURSIVE', 'true').lower() == 'true'
     config['DEFAULT_USE_COMPRESSION'] = env_vars.get('DEFAULT_USE_COMPRESSION', 'true').lower() == 'true'
     config['DEFAULT_RESUME_SUPPORT'] = env_vars.get('DEFAULT_RESUME_SUPPORT', 'true').lower() == 'true'
-    config['DEFAULT_DIRECT_REMOTE_TRANSFER'] = env_vars.get('DEFAULT_DIRECT_REMOTE_TRANSFER', 'false').lower() == 'true'
+    # config['DEFAULT_DIRECT_REMOTE_TRANSFER'] = env_vars.get('DEFAULT_DIRECT_REMOTE_TRANSFER', 'false').lower() == 'true' # Removed R2R
 
     # Global settings
     config['DEBUG_MODE'] = env_vars.get('DEBUG_MODE', 'false').lower() == 'true'
@@ -57,7 +57,7 @@ def load_configuration(env_file: Path) -> dict:
         job_data['recursive'] = env_vars.get(f'ZFS_SYNC_JOB_{job_name}_RECURSIVE', str(config['DEFAULT_RECURSIVE'])).lower() == 'true'
         job_data['use_compression'] = env_vars.get(f'ZFS_SYNC_JOB_{job_name}_USE_COMPRESSION', str(config['DEFAULT_USE_COMPRESSION'])).lower() == 'true'
         job_data['resume_support'] = env_vars.get(f'ZFS_SYNC_JOB_{job_name}_RESUME_SUPPORT', str(config['DEFAULT_RESUME_SUPPORT'])).lower() == 'true'
-        job_data['direct_remote_transfer'] = env_vars.get(f'ZFS_SYNC_JOB_{job_name}_DIRECT_REMOTE_TRANSFER', str(config['DEFAULT_DIRECT_REMOTE_TRANSFER'])).lower() == 'true'
+        job_data['direct_remote_transfer'] = False # Removed R2R
         job_data['sync_snapshot'] = f"{job_data['snapshot_prefix']}-sync" # Derive sync snapshot name
 
         # Validate Mandatory Job Settings

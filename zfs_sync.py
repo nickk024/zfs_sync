@@ -50,7 +50,7 @@ def run_job(job_config: dict, config: dict) -> bool:
     logging.info(f"  Sync Snapshot:    {sync_snapshot_name}")
     logging.info(f"  Compression:      {job_config['use_compression']}")
     logging.info(f"  Resume Support:   {job_config['resume_support']}")
-    logging.info(f"  Direct Remote:    {job_config['direct_remote_transfer']}")
+    # logging.info(f"  Direct Remote:    {job_config['direct_remote_transfer']}") # Removed R2R
     logging.info("---")
 
     # --- Job Logic ---

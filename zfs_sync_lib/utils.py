@@ -225,7 +225,7 @@ def check_command_exists(command: str) -> bool:
 def check_prerequisites(config: dict):
     """Checks for required command-line tools."""
     logging.info("Checking for required tools...")
-    required = ["zfs", "ssh", "pv"]
+    required = ["zfs", "ssh"] # Removed 'pv' as it's no longer used
     all_found = True
     for cmd in required:
         if not check_command_exists(cmd):

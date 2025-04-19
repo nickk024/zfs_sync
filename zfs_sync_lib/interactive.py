@@ -187,8 +187,8 @@ def run_interactive_setup(config: dict, run_job_func):
         interactive_recursive = Confirm.ask("Recursive transfer?", default=config.get('DEFAULT_RECURSIVE', True))
         interactive_compression = Confirm.ask("Use compression during transfer?", default=config.get('DEFAULT_USE_COMPRESSION', True))
         interactive_resume = Confirm.ask("Enable resume support for initial transfer?", default=config.get('DEFAULT_RESUME_SUPPORT', True))
-        # interactive_direct_remote = Confirm.ask("Direct remote-to-remote transfer (if applicable)?", default=config.get('DEFAULT_DIRECT_REMOTE_TRANSFER', False)) # Removed R2R
-        interactive_direct_remote = False # Hardcode to False as R2R is removed
+        # interactive_direct_remote prompt removed as R2R is no longer supported
+        interactive_direct_remote = False # Hardcode to False
         console.print("") # Spacer
 
         # --- Snapshot Options ---
@@ -229,7 +229,7 @@ def run_interactive_setup(config: dict, run_job_func):
         summary_table.add_row("Recursive", str(interactive_recursive))
         summary_table.add_row("Compression", str(interactive_compression))
         summary_table.add_row("Resume Support", str(interactive_resume))
-        summary_table.add_row("Direct Remote", str(interactive_direct_remote))
+        # summary_table.add_row("Direct Remote", str(interactive_direct_remote)) # Removed R2R
         summary_table.add_row("Snapshot Prefix", interactive_snapshot_prefix)
         summary_table.add_row("Max Snapshots", str(interactive_max_snapshots))
         summary_table.add_row("Dry Run", "[yellow]Yes[/yellow]" if interactive_dry_run else "No")
