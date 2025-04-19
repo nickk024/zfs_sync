@@ -132,11 +132,16 @@ def create_snapshot(dataset: str, snapshot_name: str, recursive: bool, host: str
     try:
         execute_command(cmd, host=host, ssh_user=ssh_user, config=config, check=True)
         # Verify creation only if not in dry run mode
-        if not config.get('DRY_RUN', False):
+        dry_run = config.get('dry_run', config.get('DRY_RUN', False))
+        if not dry_run:
+            # Only perform verification if not a dry run
             if not get_snapshot(full_snapshot_name, host, ssh_user, config):
                  logging.error(f"Verification failed: Snapshot '{full_snapshot_name}' not found after creation attempt on {host}.")
                  return False
-        logging.info(f"Successfully created and verified snapshot '{full_snapshot_name}' on {host}")
+            logging.info(f"Successfully created and verified snapshot '{full_snapshot_name}' on {host}")
+        else:
+            # In dry run, log assumed success after skipping the action
+            logging.info(f"[DRY RUN] Assumed snapshot '{full_snapshot_name}' created successfully on {host}")
         return True
     except Exception as e:
         # Error logged by execute_command
