@@ -13,7 +13,8 @@ from zfs_sync_lib.config import load_configuration
 from zfs_sync_lib.utils import setup_logging, check_prerequisites, verify_ssh
 from zfs_sync_lib.zfs import (
     has_dataset, find_verified_common_snapshots, create_snapshot,
-    setup_sync_snapshot, clean_old_snapshots, get_snapshot
+    setup_sync_snapshot, clean_old_snapshots, get_snapshot,
+    cleanup_incomplete_snapshots # Added missing import
 )
 from zfs_sync_lib.transfer import perform_full_transfer, perform_incremental_transfer
 from zfs_sync_lib.interactive import run_interactive_setup # Import interactive setup
