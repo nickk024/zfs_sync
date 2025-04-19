@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail # Exit on error, unset var, pipe failure
 # ZFS Sync - Logging Functions
 # --------------------------------
 
