@@ -33,15 +33,16 @@ def setup_logging(log_dir: Path, debug_mode: bool = False):
     logging.info(f"Logging initialized. Log file: {log_file}")
 
 # --- Command Execution ---
-def execute_command(command_args: list, host: str = "local", ssh_user: str = None,
+def execute_command(command_args, host: str = "local", ssh_user: str = None,
                     config: dict = None, check: bool = True, capture_output: bool = True,
                     timeout: int = None, shell: bool = False, input_data: str = None) -> subprocess.CompletedProcess:
     """
-    Executes a command locally or remotely via SSH, handling dry-run.
+    Executes a command locally or remotely via SSH.
+    Handles dry-run intelligently: executes read-only ZFS commands (list, get, version)
+    but only logs action ZFS commands (snapshot, destroy, send, receive, rename).
 
     Args:
-        command_args: A list of command arguments (e.g., ['zfs', 'list', '-t', 'snapshot']).
-                      If shell=True, this should be a single string.
+        command_args: A list of command arguments (e.g., ['zfs', 'list']) or a single string if shell=True.
         host: The host to run the command on ('local' or remote hostname/IP).
         ssh_user: The SSH user for remote commands.
         config: The global configuration dictionary containing DRY_RUN, SSH_TIMEOUT.
@@ -114,53 +115,92 @@ def execute_command(command_args: list, host: str = "local", ssh_user: str = Non
     else: # Local execution
         full_command_list_or_str = command_args
 
-    # Get a string representation for logging
+    # --- Dry Run Logic ---
+    is_action_command = False
+    read_only_zfs = {'list', 'get', 'version'}
+    action_zfs = {'snapshot', 'destroy', 'send', 'receive', 'rename'}
+
+    # Determine if the *intended* command is a ZFS action command
+    # This uses the original `command_args` before potential SSH wrapping
+    is_action_command = False
+    if isinstance(command_args, list) and command_args and command_args[0] == 'zfs':
+        subcommand = command_args[1] if len(command_args) > 1 else None
+        if subcommand in action_zfs:
+            is_action_command = True
+        elif subcommand not in read_only_zfs:
+            # Treat unknown ZFS subcommands as actions for safety
+            logging.warning(f"Unclassified ZFS subcommand '{subcommand}' treated as action for dry run.")
+            is_action_command = True
+    elif isinstance(command_args, str) and shell:
+        # For shell commands, we conservatively assume it might be an action in dry run,
+        # unless it clearly starts with a known read-only command.
+        # This is imperfect but safer than trying to parse complex shell strings.
+        is_action_command = True # Default to action for shell=True
+        try:
+            first_cmd_part = shlex.split(command_args)[0]
+            if first_cmd_part == 'zfs':
+                subcommand = shlex.split(command_args)[1] if len(shlex.split(command_args)) > 1 else None
+                if subcommand in read_only_zfs:
+                    is_action_command = False # It's a read-only ZFS command even in shell mode
+        except Exception:
+            pass # Ignore parsing errors, stick with is_action_command = True
+
+    # Note: Non-ZFS commands are currently always executed, even in dry run.
+    # If specific non-ZFS commands should be skipped, add classification here.
+
+    # Get a string representation for logging (use the potentially wrapped command)
     if isinstance(full_command_list_or_str, list):
         command_str_log = " ".join(full_command_list_or_str)
     else:
         command_str_log = full_command_list_or_str
 
-    if dry_run:
-        logging.info(f"[DRY RUN] Would execute on '{host}': {command_str_log}")
+    if dry_run and is_action_command:
+        logging.info(f"[DRY RUN] Would execute (Action Command) on '{host}': {command_str_log}")
+        # Return dummy success for dry-run actions
         return subprocess.CompletedProcess(args=full_command_list_or_str, returncode=0, stdout="", stderr="")
-    else:
+    elif dry_run: # Read-only command or allowed non-ZFS local command
+        logging.info(f"[DRY RUN] Executing (Read-Only Command) on '{host}': {command_str_log}")
+        # Proceed to execute read-only commands even in dry run
+    else: # Not a dry run
         logging.info(f"Executing on '{host}': {command_str_log}")
-        try:
-            process = subprocess.run(
-                full_command_list_or_str,
-                check=check,
-                capture_output=capture_output,
-                text=True,
-                timeout=final_timeout,
-                shell=shell_needed, # Use shell only if explicitly needed locally
-                input=input_data
-            )
-            # Log output only in debug mode to avoid clutter
-            if process.stdout:
-                logging.debug(f"Stdout: {process.stdout.strip()}")
-            if process.stderr:
-                logging.debug(f"Stderr: {process.stderr.strip()}")
-            return process
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Command failed on '{host}' with exit code {e.returncode}: {command_str_log}")
-            # Log captured output on error
-            if e.stdout: logging.error(f"Stdout: {e.stdout.strip()}")
-            if e.stderr: logging.error(f"Stderr: {e.stderr.strip()}")
-            if check: raise
-            return e
-        except subprocess.TimeoutExpired as e:
-            logging.error(f"Command timed out on '{host}': {command_str_log}")
-            if check: raise
-            return e
-        except FileNotFoundError as e:
-             logging.error(f"Command not found on '{host}': {command_str_log}")
-             if check: raise
-             return subprocess.CompletedProcess(args=full_command_list_or_str, returncode=127, stdout="", stderr=str(e))
-        except Exception as e:
-            logging.error(f"An unexpected error occurred executing command on '{host}': {command_str_log}")
-            logging.exception("Error details:") # Log full traceback
-            if check: raise
-            return subprocess.CompletedProcess(args=full_command_list_or_str, returncode=1, stdout="", stderr=str(e))
+
+    # --- Actual Execution (if not dry run action) ---
+    try:
+        process = subprocess.run(
+            full_command_list_or_str,
+            check=check,
+            capture_output=capture_output,
+            text=True,
+            timeout=final_timeout,
+            shell=shell_needed, # Use shell only if explicitly needed locally
+            input=input_data
+        )
+        # Log output only in debug mode to avoid clutter
+        if process.stdout:
+            logging.debug(f"Stdout: {process.stdout.strip()}")
+        if process.stderr:
+            logging.debug(f"Stderr: {process.stderr.strip()}")
+        return process
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Command failed on '{host}' with exit code {e.returncode}: {command_str_log}")
+        # Log captured output on error
+        if e.stdout: logging.error(f"Stdout: {e.stdout.strip()}")
+        if e.stderr: logging.error(f"Stderr: {e.stderr.strip()}")
+        if check: raise
+        return e
+    except subprocess.TimeoutExpired as e:
+        logging.error(f"Command timed out on '{host}': {command_str_log}")
+        if check: raise
+        return e
+    except FileNotFoundError as e:
+         logging.error(f"Command not found on '{host}': {command_str_log}")
+         if check: raise
+         return subprocess.CompletedProcess(args=full_command_list_or_str, returncode=127, stdout="", stderr=str(e))
+    except Exception as e:
+        logging.error(f"An unexpected error occurred executing command on '{host}': {command_str_log}")
+        logging.exception("Error details:") # Log full traceback
+        if check: raise
+        return subprocess.CompletedProcess(args=full_command_list_or_str, returncode=1, stdout="", stderr=str(e))
 
 
 # --- System Checks ---

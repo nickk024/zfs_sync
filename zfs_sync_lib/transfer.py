@@ -122,14 +122,18 @@ def execute_transfer_pipeline(pipeline_cmds: List[List[str]], config: dict, prog
     success = False
     dry_run = config.get('dry_run', config.get('DRY_RUN', False)) # Check dry run flag
 
+    # The dry run check for action commands is now handled within execute_command.
+    # However, the actual pipeline execution using Popen should only happen if not dry run.
     if dry_run:
-        logging.info("[DRY RUN] Would execute pipeline:")
+        # Log the planned pipeline stages (which were determined using real read commands)
+        logging.info("[DRY RUN] Planned execution pipeline:")
         for i, cmd_args in enumerate(pipeline_cmds):
             logging.info(f"[DRY RUN] Stage {i}: {' '.join(cmd_args)}")
-        # Simulate success for dry run
+        # Simulate success for dry run pipeline planning
         progress.update(task_id, completed=progress.tasks[task_id].total or 1, total=progress.tasks[task_id].total or 1)
         return True
 
+    # --- Actual Pipeline Execution (Not Dry Run) ---
     try:
         # Start all processes in the pipeline
         last_stdout = None

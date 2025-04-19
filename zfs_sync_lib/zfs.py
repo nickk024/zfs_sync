@@ -7,6 +7,7 @@ from .utils import execute_command # Relative import
 
 def has_dataset(dataset: str, host: str, ssh_user: str, config: dict) -> bool:
     """Checks if a ZFS dataset exists."""
+    # Dry run check removed - this command should run even in dry run
     logging.debug(f"Checking if dataset '{dataset}' exists on {host}")
     try:
         # Use 'zfs list' which returns 0 if dataset exists, non-zero otherwise
@@ -24,6 +25,7 @@ def has_dataset(dataset: str, host: str, ssh_user: str, config: dict) -> bool:
 
 def get_snapshot(snapshot_full_name: str, host: str, ssh_user: str, config: dict) -> bool:
     """Checks if a specific ZFS snapshot exists by its full name."""
+    # Dry run check removed - this command should run even in dry run
     logging.debug(f"Checking for snapshot '{snapshot_full_name}' on {host}")
     try:
         execute_command(['zfs', 'list', '-t', 'snapshot', '-o', 'name', '-H', snapshot_full_name],
@@ -41,6 +43,7 @@ def get_snapshot(snapshot_full_name: str, host: str, ssh_user: str, config: dict
 
 def get_snapshots_with_guids(dataset: str, host: str, ssh_user: str, config: dict) -> dict:
     """Gets a dictionary mapping snapshot names to guids for a dataset."""
+    # Dry run check removed - this command should run even in dry run
     logging.debug(f"Getting snapshots and guids for dataset '{dataset}' on {host}")
     snapshots = {}
     try:
@@ -305,6 +308,7 @@ def cleanup_incomplete_snapshots(dataset: str, host: str, ssh_user: str, config:
 
 def get_receive_resume_token(dataset: str, host: str, ssh_user: str, config: dict) -> Optional[str]:
     """Gets the receive_resume_token property for a dataset, if it exists."""
+    # Dry run check removed - this command should run even in dry run
     logging.debug(f"Checking for receive_resume_token on {host}:{dataset}")
     cmd = ['zfs', 'get', '-Hp', '-o', 'value', 'receive_resume_token', dataset]
     try:
@@ -327,6 +331,11 @@ def get_receive_resume_token(dataset: str, host: str, ssh_user: str, config: dic
 def estimate_transfer_size(dataset: str, host: str, ssh_user: str, config: dict,
                            base_snapshot: Optional[str] = None, new_snapshot: Optional[str] = None) -> Optional[int]:
     """Estimates the size of a ZFS send operation in bytes."""
+    dry_run = config.get('dry_run', config.get('DRY_RUN', False))
+    if dry_run:
+        logging.debug("[DRY RUN] Skipping transfer size estimation.")
+        return None # Don't run zfs send -n during dry run
+
     if base_snapshot and new_snapshot:
         # Estimate incremental size
         logging.info(f"Estimating incremental send size for {dataset}@{base_snapshot} -> {new_snapshot} on {host}...")
