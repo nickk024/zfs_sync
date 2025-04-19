@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail # Exit on error, unset var, pipe failure
 # ZFS Sync - Dataset Management Functions
 # --------------------------------
 
@@ -63,48 +64,66 @@ get_snapshot() {
 # Find common snapshots between source and destination
 # IMPORTANT: This function should only echo the list of common snapshot names to stdout.
 # All logging must go to stderr (using log, warn, error, debug).
-find_common_snapshots() {
+find_verified_common_snapshots() {
   local src_host=$1
   local src_dataset=$2
   local dst_host=$3
   local dst_dataset=$4
   local ssh_user=$5
 
-  log "Checking for common snapshots between source and destination..." >&2 # Log to stderr
+  log "Checking for VERIFIED common snapshots (matching name and guid) between source and destination..." >&2 # Log to stderr
 
-  # Get source snapshots
-  local src_snaps=""
+  # Associative arrays to store name -> guid mapping (Requires Bash 4+)
+  declare -A src_snap_guids
+  declare -A dst_snap_guids
+
+  # Get source snapshots and guids
+  local src_list_output
   if [[ "$src_host" == "local" ]]; then
-    debug "Getting snapshots for local source dataset $src_dataset"
-    src_snaps=$(zfs list -t snapshot -o name -H "$src_dataset" 2>/dev/null | awk -F@ '{print $2}' | sort || echo "")
+    debug "Getting snapshots and guids for local source dataset $src_dataset"
+    src_list_output=$(zfs list -t snapshot -o name,guid -Hpr "$src_dataset" 2>/dev/null || echo "")
   else
-    debug "Getting snapshots for remote source dataset $src_dataset on $src_host"
-    src_snaps=$(ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$src_host" "zfs list -t snapshot -o name -H '$src_dataset' 2>/dev/null" | awk -F@ '{print $2}' | sort || echo "")
+    debug "Getting snapshots and guids for remote source dataset $src_dataset on $src_host"
+    src_list_output=$(ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$src_host" "zfs list -t snapshot -o name,guid -Hpr '$src_dataset' 2>/dev/null" || echo "")
   fi
-  
-  # Get destination snapshots
-  local dst_snaps=""
-  if [[ "$dst_host" == "local" ]]; then
-    debug "Getting snapshots for local destination dataset $dst_dataset"
-    dst_snaps=$(zfs list -t snapshot -o name -H "$dst_dataset" 2>/dev/null | awk -F@ '{print $2}' | sort || echo "")
-  else
-    debug "Getting snapshots for remote destination dataset $dst_dataset on $dst_host"
-    dst_snaps=$(ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$dst_host" "zfs list -t snapshot -o name -H '$dst_dataset' 2>/dev/null" | awk -F@ '{print $2}' | sort || echo "")
-  fi
-  
-  debug "Source snapshots: $(echo "$src_snaps" | tr '\n' ' ')" >&2 # Log to stderr
-  debug "Destination snapshots: $(echo "$dst_snaps" | tr '\n' ' ')" >&2 # Log to stderr
 
-  # Find common snapshots - make sure they are properly trimmed to avoid invalid names
+  # Populate source associative array
+  while IFS=$'\t' read -r full_name guid; do
+    local snap_name=${full_name#*@} # Extract name after @
+    src_snap_guids["$snap_name"]="$guid"
+    debug "Source: $snap_name -> $guid" >&2
+  done <<< "$src_list_output"
+
+  # Get destination snapshots and guids
+  local dst_list_output
+  if [[ "$dst_host" == "local" ]]; then
+    debug "Getting snapshots and guids for local destination dataset $dst_dataset"
+    dst_list_output=$(zfs list -t snapshot -o name,guid -Hpr "$dst_dataset" 2>/dev/null || echo "")
+  else
+    debug "Getting snapshots and guids for remote destination dataset $dst_dataset on $dst_host"
+    dst_list_output=$(ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$dst_host" "zfs list -t snapshot -o name,guid -Hpr '$dst_dataset' 2>/dev/null" || echo "")
+  fi
+
+  # Populate destination associative array
+  while IFS=$'\t' read -r full_name guid; do
+    local snap_name=${full_name#*@} # Extract name after @
+    dst_snap_guids["$snap_name"]="$guid"
+    debug "Destination: $snap_name -> $guid" >&2
+  done <<< "$dst_list_output"
+
+  # Find common snapshots by comparing names and guids
   local common_snaps_list=""
-  for snap in $src_snaps; do
-    # Trim the snapshot name to remove any potential whitespace or newlines
-    snap=$(echo "$snap" | tr -d '\n\r')
-    
-    # Check if this snapshot exists in destination snapshots
-    if echo "$dst_snaps" | grep -q "^$snap\$"; then
-      common_snaps_list="$common_snaps_list$snap\n"
-      debug "Found common snapshot: $snap" >&2 # Log to stderr
+  local snap_name
+  # Iterate over keys (snapshot names) of the source array
+  for snap_name in "${!src_snap_guids[@]}"; do
+    # Check if the snapshot name exists on the destination AND if the guids match
+    if [[ -v dst_snap_guids["$snap_name"] ]] && [[ "${src_snap_guids["$snap_name"]}" == "${dst_snap_guids["$snap_name"]}" ]]; then
+      common_snaps_list="$common_snaps_list$snap_name\n"
+      debug "Found VERIFIED common snapshot: $snap_name (GUID: ${src_snap_guids["$snap_name"]})" >&2 # Log to stderr
+    else
+      if [[ -v dst_snap_guids["$snap_name"] ]]; then
+         debug "Snapshot '$snap_name' exists on both, but GUIDs differ (Src: ${src_snap_guids["$snap_name"]}, Dst: ${dst_snap_guids["$snap_name"]}). Not a valid common snapshot." >&2
+      fi
     fi
   done
 
@@ -139,11 +158,14 @@ create_snapshot() {
   fi
   
   log "Creating snapshot $dataset@$snapshot on $host"
+  local snapshot_cmd
   if [[ "$host" == "local" ]]; then
-    zfs snapshot $r_flag "$dataset@$snapshot" || error "Failed to create snapshot $dataset@$snapshot"
+    snapshot_cmd="zfs snapshot $r_flag \"$dataset@$snapshot\""
   else
-    ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$host" "zfs snapshot $r_flag '$dataset@$snapshot'" || error "Failed to create snapshot $dataset@$snapshot on $host"
+    # Ensure proper quoting for remote command
+    snapshot_cmd="ssh -o ConnectTimeout=\"$SSH_TIMEOUT\" \"$ssh_user@$host\" \"zfs snapshot $r_flag '$dataset@$snapshot'\""
   fi
+  execute_or_log_command "$snapshot_cmd" "Failed to create snapshot $dataset@$snapshot on $host"
   
   # Verify snapshot was created
   if ! get_snapshot "$host" "$dataset" "$snapshot" "$ssh_user"; then
@@ -195,29 +217,30 @@ clean_old_snapshots() {
   local success_count=0
   local fail_count=0
   
-  while read -r snap; do
-    if [[ -n "$snap" ]]; then
-      debug "Removing snapshot: $snap"
-      
+  local snap_to_remove # Define outside loop for clarity
+  while IFS= read -r snap_to_remove; do
+    if [[ -n "$snap_to_remove" ]]; then
+      local destroy_cmd
       if [[ "$host" == "local" ]]; then
-        if zfs destroy "$snap" 2>/dev/null; then
-          ((success_count++))
-          debug "Successfully removed $snap"
-        else
-          ((fail_count++))
-          warn "Failed to remove snapshot $snap"
-        fi
+        # Ensure proper quoting for snapshot names that might contain spaces (though unlikely)
+        destroy_cmd="zfs destroy \"$snap_to_remove\""
       else
-        if ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$host" "zfs destroy '$snap'" 2>/dev/null; then
+        # Ensure proper quoting for remote command and snapshot name
+        destroy_cmd="ssh -o ConnectTimeout=\"$SSH_TIMEOUT\" \"$ssh_user@$host\" \"zfs destroy '$snap_to_remove'\""
+      fi
+      # Use execute_or_log_command; it handles logging and errors internally
+      # We don't need to track success/fail counts here anymore unless specifically needed later
+      execute_or_log_command "$destroy_cmd" "Failed to remove snapshot $snap_to_remove" || fail_count=$((fail_count + 1)) # Increment fail count if helper indicates failure (though it exits on error by default)
+      # If execute_or_log_command doesn't exit on error, we need to handle the return code
+      if [[ $? -eq 0 ]]; then
           ((success_count++))
-          debug "Successfully removed $snap"
-        else
+      else
           ((fail_count++))
-          warn "Failed to remove snapshot $snap"
-        fi
       fi
     fi
   done <<< "$snapshots_to_remove"
+  # Reset fail_count if execute_or_log_command exits on error
+  [[ "$DRY_RUN" != "true" ]] && fail_count=0 # Assume success if not dry run and script didn't exit
   
   log "Snapshot cleanup summary: Removed $success_count snapshots, $fail_count failed"
 }
@@ -230,13 +253,17 @@ cleanup_incomplete_snapshots() {
   local ssh_user=$4
   local recursive=$5
   
-  log "Checking for potentially incomplete snapshots on $host:$dataset matching pattern $pattern..."
+  # Ensure the pattern is treated as a literal string for grep
+  local escaped_pattern=$(printf '%s\n' "$pattern" | sed 's/[][\.|$()*+?{}^]/\\&/g')
+  log "Checking for potentially incomplete snapshots on $host:$dataset matching pattern '@${pattern}'..."
   
   local snapshot_list
   if [[ "$host" == "local" ]]; then
-    snapshot_list=$(zfs list -t snapshot -o name -H "$dataset" 2>/dev/null | grep "@$pattern" || echo "")
+    # Use grep -F for fixed string matching and -x for whole line matching
+    snapshot_list=$(zfs list -t snapshot -o name -H "$dataset" 2>/dev/null | grep -F "@${pattern}" || echo "")
   else
-    snapshot_list=$(ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$host" "zfs list -t snapshot -o name -H '$dataset' 2>/dev/null | grep '@$pattern'" || echo "")
+    # Use grep -F for fixed string matching and -x for whole line matching on remote host
+    snapshot_list=$(ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$host" "zfs list -t snapshot -o name -H '$dataset' 2>/dev/null | grep -F '@${pattern}'" || echo "")
   fi
   
   if [[ -n "$snapshot_list" ]]; then
@@ -245,14 +272,17 @@ cleanup_incomplete_snapshots() {
     local r_flag=""
     [[ "$recursive" == "true" ]] && r_flag="-r"
     
-    while read -r snapshot; do
-      if [[ -n "$snapshot" ]]; then
-        debug "Removing incomplete snapshot: $snapshot"
+    local snapshot_to_remove # Define outside loop
+    while IFS= read -r snapshot_to_remove; do
+      if [[ -n "$snapshot_to_remove" ]]; then
+        local destroy_cmd
         if [[ "$host" == "local" ]]; then
-          zfs destroy $r_flag "$snapshot" 2>/dev/null && log "Removed incomplete snapshot: $snapshot" || warn "Failed to remove snapshot $snapshot"
+          destroy_cmd="zfs destroy $r_flag \"$snapshot_to_remove\""
         else
-          ssh -o ConnectTimeout="$SSH_TIMEOUT" "$ssh_user@$host" "zfs destroy $r_flag '$snapshot'" 2>/dev/null && log "Removed incomplete snapshot: $snapshot" || warn "Failed to remove snapshot $snapshot"
+          destroy_cmd="ssh -o ConnectTimeout=\"$SSH_TIMEOUT\" \"$ssh_user@$host\" \"zfs destroy $r_flag '$snapshot_to_remove'\""
         fi
+        # Use helper function
+        execute_or_log_command "$destroy_cmd" "Failed to remove incomplete snapshot $snapshot_to_remove"
       fi
     done <<< "$snapshot_list"
   else
@@ -295,10 +325,11 @@ confirm_dataset_exists() {
   else
     log "Destination dataset confirmed: $dst_dataset on $dst_host (this may have been created by other means)" >&2 # Log to stderr
 
-    # Check for any interrupted/incomplete snapshots and clean them up
+    # Check for any interrupted/incomplete snapshots using a specific prefix and clean them up
+    local incomplete_prefix="_zfs_sync_incomplete_"
+    log "Checking for snapshots matching the incomplete prefix '@${incomplete_prefix}'..." >&2
     # Logging within cleanup_incomplete_snapshots should already go to stderr via log/warn/debug
-    cleanup_incomplete_snapshots "$dst_host" "$dst_dataset" "initial-sync" "$ssh_user" "$recursive_flag" >&2
-    cleanup_incomplete_snapshots "$dst_host" "$dst_dataset" "tmp" "$ssh_user" "$recursive_flag" >&2
+    cleanup_incomplete_snapshots "$dst_host" "$dst_dataset" "$incomplete_prefix" "$ssh_user" "$recursive_flag" >&2
     return 0 # Destination exists
   fi
 }
