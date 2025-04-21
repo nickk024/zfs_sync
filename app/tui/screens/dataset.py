@@ -152,7 +152,7 @@ class DatasetScreen(Screen):
         self.check_continue_button_state() # Check if continue can be enabled
 
     # --- Event Handlers ---
-    def on_selection_list_selection_changed(self, event: SelectionList.SelectionChanged) -> None:
+    def on_selection_list_selection_changed(self, event: SelectionList.SelectedChanged) -> None: # Corrected event name
         """Handle changes in dataset selections."""
         list_id = event.selection_list.id
         selected_values = event.selection_list.selected # This is a list of values
