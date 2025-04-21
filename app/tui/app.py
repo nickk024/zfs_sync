@@ -42,15 +42,21 @@ class ZFSSyncApp(App[Optional[Dict]]): # Return job config on exit?
         layers: base overlay; /* Ensure overlay layers like dialogs work */
     }
     /* Styles for specific screen containers */
-    #setup-form, #dataset-container, #options-form, #summary-container, #transfer-container {
+    #setup-form { /* Combined border and title */
         padding: 1 2;
-        border: thick $accent;
+        border: thick $accent title("Host & SSH");
         margin: 1;
-        /* Ensure containers scroll if content overflows */
         overflow-y: auto;
-        height: 100%; /* Try to make containers fill height */
+        height: 100%;
     }
-    #setup-form { border-title: "Host & SSH"; }
+    #dataset-container, #options-form, #summary-container, #transfer-container {
+         padding: 1 2;
+         border: thick $accent; /* Keep separate for now */
+         margin: 1;
+         overflow-y: auto;
+         height: 100%;
+    }
+    /* #setup-form { border-title: "Host & SSH"; } */ /* Removed separate rule */
     #dataset-container { border-title: "Dataset Selection"; }
     #options-form { border-title: "Options"; }
     #summary-container { border-title: "Summary & Confirmation"; }
@@ -84,7 +90,7 @@ class ZFSSyncApp(App[Optional[Dict]]): # Return job config on exit?
     LoadingIndicator { /* General style for loading indicators */
         margin-top: 1;
         width: 100%;
-        content-align: center;
+        content-align: center middle; /* Corrected: Added vertical alignment */
     }
     /* Styles specific to DatasetScreen */
     #src-dataset-scroll, #dst-dataset-scroll {
