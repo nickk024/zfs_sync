@@ -41,22 +41,15 @@ class ZFSSyncApp(App[Optional[Dict]]): # Return job config on exit?
     Screen {
         layers: base overlay; /* Ensure overlay layers like dialogs work */
     }
-    /* Styles for specific screen containers - Using explicit border properties */
+    /* Styles for specific screen containers - Reverted to border shorthand */
     #setup-form, #dataset-container, #options-form, #summary-container, #transfer-container {
         padding: 1 2;
-        /* Explicit border properties instead of shorthand */
-        border-type: thick;
-        border-color: $accent;
+        border: heavy $accent; /* Use border shorthand - changed 'thick' to 'heavy' */
         margin: 1;
         overflow-y: auto;
         height: 100%;
     }
-    /* Set titles separately */
-    #setup-form { border-title: "Host & SSH"; }
-    #dataset-container { border-title: "Dataset Selection"; }
-    #options-form { border-title: "Options"; }
-    #summary-container { border-title: "Summary & Confirmation"; }
-    #transfer-container { border-title: "Transfer Progress"; }
+    /* Border titles are set in Python code via widget properties */
 
     /* General Widget Styles */
     Label, .section-title {
