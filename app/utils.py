@@ -8,17 +8,9 @@ from typing import Dict, List, Any, Optional # Import typing helpers
 
 
 # --- Logging Setup ---
-def setup_logging(log_dir: Path, debug_mode: bool = False):
-    """Sets up logging configuration."""
-    log_dir.mkdir(parents=True, exist_ok=True)
-    # Use a more descriptive log file name if possible
-    try:
-        hostname = os.uname().nodename
-    except AttributeError:
-        import socket
-        hostname = socket.gethostname()
-    log_file = log_dir / f"zfs_sync_{hostname}_py.log"
-    log_level = logging.DEBUG if debug_mode else logging.INFO
+def setup_logging(log_level_str: str = 'INFO', log_file: Optional[str] = None, console_logging: bool = True):
+    """Sets up logging configuration based on provided level, file path, and console flag."""
+    log_level = getattr(logging, log_level_str.upper(), logging.INFO)
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
 
     # Configure root logger
@@ -26,13 +18,36 @@ def setup_logging(log_dir: Path, debug_mode: bool = False):
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
+    handlers = []
+    log_file_path = None
+    if log_file:
+        try:
+            log_file_path = Path(log_file)
+            log_file_path.parent.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+            handlers.append(logging.FileHandler(log_file_path))
+        except Exception as e:
+            # Fallback to console logging if file setup fails
+            print(f"Warning: Could not configure file logging to '{log_file}': {e}. Logging to console only.", file=sys.stderr)
+            console_logging = True # Force console logging if file fails
+            log_file_path = None # Reset path
+
+    if console_logging:
+        handlers.append(logging.StreamHandler(sys.stdout))
+
+    if not handlers:
+        # Ensure there's at least one handler (console) if file logging fails and console was false
+        print("Warning: No logging handlers configured. Defaulting to console logging.", file=sys.stderr)
+        handlers.append(logging.StreamHandler(sys.stdout))
+
+
     logging.basicConfig(level=log_level,
                         format=log_format,
-                        handlers=[
-                            logging.FileHandler(log_file),
-                            logging.StreamHandler(sys.stdout) # Also log to console
-                        ])
-    logging.info(f"Logging initialized. Log file: {log_file}")
+                        handlers=handlers)
+
+    if log_file_path:
+        logging.info(f"Logging initialized. Level: {log_level_str}. Log file: {log_file_path}")
+    else:
+         logging.info(f"Logging initialized. Level: {log_level_str}. Logging to console.")
 
 
 # --- Sanoid Command Building ---
