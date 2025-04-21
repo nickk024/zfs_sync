@@ -109,22 +109,25 @@ class HostSSHScreen(Screen):
             # --- Perform Verification (potentially long running) ---
             self.app.run_worker(
                 self.verify_connections(src_host, dst_host, ssh_user),
-                exclusive=True
+                callback=self.update_verification_status, # Pass UI update method as callback
+                exclusive=True,
+                group="ssh_verify" # Optional: group the worker
             )
 
-    def verify_connections(self, src_host: str, dst_host: str, ssh_user: str) -> None: # Changed to sync def
-        """Worker function to verify SSH connections."""
+    async def verify_connections(self, src_host: str, dst_host: str, ssh_user: str) -> tuple[bool, bool, str]: # Make async again, return results
+        """Worker function to verify SSH connections. Returns (src_ok, dst_ok, error_msg)."""
         src_ok = False
         dst_ok = False
         error_msg = ""
 
         try:
-            status_widget = self.query_one("#status-message", Static) # Get widget ref before thread switch
+            # status_widget = self.query_one("#status-message", Static) # No need to get widget here
             # Verify source
-            # Update UI from worker thread - call_from_thread is needed here
-            self.app.call_from_thread(status_widget.update, f"Verifying SSH to Source ({src_host})...")
-            # Call verify_ssh directly from the worker thread
-            src_ok = verify_ssh(src_host, ssh_user, self.config)
+            # No UI updates from here directly, use run_sync_in_worker_thread for blocking calls
+            src_ok = await self.app.run_sync_in_worker_thread( # Use await and run_sync
+                 verify_ssh, src_host, ssh_user, self.config,
+                 thread_name=f"verify_ssh_{src_host}" # Optional: name the thread
+            )
 
             if not src_ok:
                 error_msg = f"Failed to connect to Source Host: {src_host}"
@@ -134,10 +137,12 @@ class HostSSHScreen(Screen):
                     dst_ok = True
                     self.app.call_from_thread(status_widget.update, "Source & Destination are the same.")
                 else:
-                    # Update UI from worker thread
-                    self.app.call_from_thread(status_widget.update, f"Verifying SSH to Destination ({dst_host})...")
-                    # Call verify_ssh directly from the worker thread
-                    dst_ok = verify_ssh(dst_host, ssh_user, self.config)
+                    # No UI updates from here directly
+                    # Use await and run_sync_in_worker_thread for blocking calls
+                    dst_ok = await self.app.run_sync_in_worker_thread( # Use await and run_sync
+                        verify_ssh, dst_host, ssh_user, self.config,
+                        thread_name=f"verify_ssh_{dst_host}" # Optional: name the thread
+                    )
                     if not dst_ok:
                         error_msg = f"Failed to connect to Destination Host: {dst_host}"
 
@@ -145,11 +150,12 @@ class HostSSHScreen(Screen):
             error_msg = f"Error during SSH verification: {e}"
             logging.exception("SSH Verification Error")
 
-        # --- Update UI from Worker ---
-        self.app.call_from_thread(self.update_verification_status, src_ok, dst_ok, error_msg)
+        # --- Return results for the callback ---
+        return src_ok, dst_ok, error_msg
 
-    def update_verification_status(self, src_ok: bool, dst_ok: bool, error_msg: str) -> None:
+    def update_verification_status(self, result: tuple[bool, bool, str]) -> None: # Accept worker result tuple
         """Callback to update UI after verification worker finishes."""
+        src_ok, dst_ok, error_msg = result # Unpack the results
         status_label = self.query_one("#status-message", Static)
         loading = self.query_one("#loading-indicator", LoadingIndicator)
         button = self.query_one("#button-continue", Button)
