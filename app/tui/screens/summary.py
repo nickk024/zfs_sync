@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any
 
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll, Horizontal
+from textual.containers import VerticalScroll, Horizontal, Container # Import Container
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Static, Button, DataTable
 from textual.binding import Binding
