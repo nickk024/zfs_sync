@@ -1,4 +1,3 @@
-python-dotenv
-rich
-prompt_toolkit
-textual
+# Core dependencies
+toml
+# Add other dependencies here as needed (e.g., textual, paramiko, apscheduler)
