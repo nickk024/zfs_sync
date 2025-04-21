@@ -112,7 +112,7 @@ class HostSSHScreen(Screen):
                 exclusive=True
             )
 
-    async def verify_connections(self, src_host: str, dst_host: str, ssh_user: str) -> None:
+    def verify_connections(self, src_host: str, dst_host: str, ssh_user: str) -> None: # Changed to sync def
         """Worker function to verify SSH connections."""
         src_ok = False
         dst_ok = False
@@ -121,8 +121,10 @@ class HostSSHScreen(Screen):
         try:
             status_widget = self.query_one("#status-message", Static) # Get widget ref before thread switch
             # Verify source
+            # Update UI from worker thread - call_from_thread is needed here
             self.app.call_from_thread(status_widget.update, f"Verifying SSH to Source ({src_host})...")
-            src_ok = await self.app.run_sync_in_worker_thread(
+            # Run verify_ssh in thread pool, but wait for result synchronously in this worker
+            src_ok = self.app.run_sync_in_worker_thread( # Removed await
                  verify_ssh, src_host, ssh_user, self.config
             )
 
@@ -134,8 +136,10 @@ class HostSSHScreen(Screen):
                     dst_ok = True
                     self.app.call_from_thread(status_widget.update, "Source & Destination are the same.")
                 else:
+                    # Update UI from worker thread
                     self.app.call_from_thread(status_widget.update, f"Verifying SSH to Destination ({dst_host})...")
-                    dst_ok = await self.app.run_sync_in_worker_thread(
+                    # Run verify_ssh in thread pool, wait for result synchronously
+                    dst_ok = self.app.run_sync_in_worker_thread( # Removed await
                         verify_ssh, dst_host, ssh_user, self.config
                     )
                     if not dst_ok:
