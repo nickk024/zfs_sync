@@ -1,6 +1,8 @@
 import logging
 import subprocess
 from typing import Optional # Import Optional
+from typing import List, Dict # Import typing helpers
+
 from .utils import execute_command # Relative import
 
 # --- ZFS Utilities ---
