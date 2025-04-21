@@ -31,7 +31,7 @@ def _load_interactive_state(state_file: Path) -> Dict[str, Any]:
         logging.debug(f"Interactive state file {state_file} not found.")
         return {}
 
-# _save_interactive_state is now in host_ssh.py, keep it there as it's only used on that screen's success
+# _save_interactive_state was moved to host_ssh.py to resolve circular import.
 
 # --- Main App ---
 

@@ -1,5 +1,7 @@
 import logging
 from typing import Dict, Any
+import json # Needed for saving state
+from pathlib import Path # Needed for saving state
 
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
@@ -10,8 +12,18 @@ from textual.binding import Binding
 # Assuming these are moved or accessible
 # from ..app import ZFSSyncApp # Or however the app instance is accessed
 from ...utils import verify_ssh # Imports from lib/utils.py
-from ..app import _save_interactive_state, STATE_FILE_PATH # Import TUI utils from app.py
+from ..app import STATE_FILE_PATH # Only import the constant
 from .dataset import DatasetScreen # Import next screen
+
+# --- Utility function moved here to break circular import ---
+def _save_interactive_state(state_file: Path, state: Dict[str, Any]):
+    """Saves the interactive state to a JSON file."""
+    try:
+        with state_file.open('w') as f:
+            json.dump(state, f, indent=4)
+            logging.debug(f"Saved interactive state to {state_file}: {state}")
+    except OSError as e:
+        logging.error(f"Could not save state file {state_file}: {e}")
 
 class HostSSHScreen(Screen):
     """Screen for entering Host and SSH details."""
