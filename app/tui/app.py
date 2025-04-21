@@ -10,9 +10,7 @@ from textual.binding import Binding
 from .screens.host_ssh import HostSSHScreen
 from .screens.transfer import TransferScreen
 from .messages import StartTransfer
-
-# --- Constants ---
-STATE_FILE_PATH = Path('.zfs_sync_interactive_state.json') # Keep state file path accessible
+from .constants import STATE_FILE_PATH # Import from constants
 
 # --- Utility Functions (TUI specific) ---
 

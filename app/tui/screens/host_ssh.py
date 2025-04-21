@@ -12,7 +12,7 @@ from textual.binding import Binding
 # Assuming these are moved or accessible
 # from ..app import ZFSSyncApp # Or however the app instance is accessed
 from ...utils import verify_ssh # Imports from lib/utils.py
-from ..app import STATE_FILE_PATH # Only import the constant
+from ..constants import STATE_FILE_PATH # Import from constants
 from .dataset import DatasetScreen # Import next screen
 
 # --- Utility function moved here to break circular import ---
