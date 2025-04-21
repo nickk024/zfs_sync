@@ -40,7 +40,7 @@ class HostSSHScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with VerticalScroll(id="setup-form"):
+        with VerticalScroll(id="setup-form", border_title="Host & SSH"):
             yield Label("Source Host:")
             yield Input(
                 value=self.initial_state.get('last_src_host', self.config.get('DEFAULT_SOURCE_HOST', 'local')),

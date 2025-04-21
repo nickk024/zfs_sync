@@ -25,7 +25,7 @@ class OptionsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with VerticalScroll(id="options-form"):
+        with VerticalScroll(id="options-form", border_title="Options"):
             yield Static("Transfer Options:", classes="section-title")
             yield Checkbox("Recursive transfer",
                            value=self.config.get('DEFAULT_RECURSIVE', True),

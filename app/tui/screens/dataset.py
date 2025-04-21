@@ -39,7 +39,7 @@ class DatasetScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="dataset-container"):
+        with Container(id="dataset-container", border_title="Dataset Selection"):
             yield Static("Select Source Dataset:", classes="section-title")
             yield LoadingIndicator(id="src-loading", classes="status-hidden")
             with VerticalScroll(id="src-dataset-scroll"):

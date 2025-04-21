@@ -92,7 +92,7 @@ class TransferScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="transfer-container"):
+        with Container(id="transfer-container", border_title="Transfer Progress"):
             # Log area should take up most space
             yield Log(id="log-area", highlight=True, markup=True)
             yield ProgressBar(id="transfer-progress", total=100, show_eta=True)
