@@ -123,10 +123,8 @@ class HostSSHScreen(Screen):
             # Verify source
             # Update UI from worker thread - call_from_thread is needed here
             self.app.call_from_thread(status_widget.update, f"Verifying SSH to Source ({src_host})...")
-            # Run verify_ssh in thread pool, but wait for result synchronously in this worker
-            src_ok = self.app.run_sync_in_worker_thread( # Removed await
-                 verify_ssh, src_host, ssh_user, self.config
-            )
+            # Call verify_ssh directly from the worker thread
+            src_ok = verify_ssh(src_host, ssh_user, self.config)
 
             if not src_ok:
                 error_msg = f"Failed to connect to Source Host: {src_host}"
@@ -138,10 +136,8 @@ class HostSSHScreen(Screen):
                 else:
                     # Update UI from worker thread
                     self.app.call_from_thread(status_widget.update, f"Verifying SSH to Destination ({dst_host})...")
-                    # Run verify_ssh in thread pool, wait for result synchronously
-                    dst_ok = self.app.run_sync_in_worker_thread( # Removed await
-                        verify_ssh, dst_host, ssh_user, self.config
-                    )
+                    # Call verify_ssh directly from the worker thread
+                    dst_ok = verify_ssh(dst_host, ssh_user, self.config)
                     if not dst_ok:
                         error_msg = f"Failed to connect to Destination Host: {dst_host}"
 
