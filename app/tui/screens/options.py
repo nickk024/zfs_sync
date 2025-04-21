@@ -25,7 +25,8 @@ class OptionsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="options-form", border_title="Options"): # Outer container
+        with Container(id="options-form"): # Outer container
+            self.query_one("#options-form", Container).border_title = "Options"
             with VerticalScroll(): # Inner scroll
                 yield Static("Transfer Options:", classes="section-title")
                 yield Checkbox("Recursive transfer",

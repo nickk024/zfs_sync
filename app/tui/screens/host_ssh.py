@@ -40,7 +40,9 @@ class HostSSHScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="setup-form", border_title="Host & SSH"): # Outer container with ID and title
+        with Container(id="setup-form"): # Outer container with ID
+            # Set title after creation
+            self.query_one("#setup-form", Container).border_title = "Host & SSH"
             with VerticalScroll(): # Inner scroll container
                 # Widgets yielded inside VerticalScroll
                 yield Label("Source Host:")

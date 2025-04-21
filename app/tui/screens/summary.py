@@ -24,7 +24,8 @@ class SummaryScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="summary-container", border_title="Summary & Confirmation"): # Outer container
+        with Container(id="summary-container"): # Outer container
+            self.query_one("#summary-container", Container).border_title = "Summary & Confirmation"
             with VerticalScroll(): # Inner scroll
                 yield Static("Configuration Summary", classes="section-title")
                 # Use DataTable for a structured summary
