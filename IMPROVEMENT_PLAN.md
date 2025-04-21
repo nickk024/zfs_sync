@@ -1,47 +1,49 @@
-# ZFS Sync Script Improvement Plan
+# ZFS Sync Py - Improvement Plan
 
-This document outlines the planned improvements for the `zfs_sync.sh` script.
+This document outlines potential improvements for the Python-based `zfs-sync` tool.
 
-## Prioritized Improvements (Phase 1)
+## Phase 1: Core Enhancements & Robustness
 
-### 1. Enhanced Error Handling & Robustness
+### 1. Configuration System
 
-*   **Pipe Safety:** Implement `set -o pipefail` at the beginning of scripts (especially `transfer.sh`) to ensure pipeline failures are caught correctly.
-*   **SSH Resilience:** Add retries or more specific error handling for SSH connection drops or timeouts *during* transfers.
-*   **Command Exit Codes:** Explicitly check the exit codes of critical commands (`zfs rename`, `zfs destroy`, etc.) within functions like `setup_sync_snapshot` and `clean_old_snapshots`.
-*   **Snapshot Edge Cases:** Handle cases where a dataset exists but has zero snapshots more gracefully (e.g., during transfer type determination or finding common snapshots).
-*   **Refine Cleanup:** Make the `cleanup_incomplete_snapshots` pattern more specific (e.g., using a unique prefix like `_incomplete_transfer_`) to avoid accidentally deleting valid user snapshots.
-*   **Prerequisite Handling:** Modify `check_prerequisites` to check for required tools (`pv`, `mbuffer`, etc.) and exit with a clear error message instructing the user to install them if missing, instead of attempting auto-installation.
-*   **Reinforce `mbuffer`:** Ensure `mbuffer` usage is robust for remote transfers over potentially unstable networks, as discussed.
+*   **Implement YAML Loading:** Replace the current `.env` parsing in `app/config.py` with YAML loading (e.g., using `PyYAML`). This provides better structure for defining multiple complex jobs.
+    *   Update `find_config_file` to primarily look for `zfs_sync.yaml`.
+    *   Update `load_config` to parse YAML structure.
+    *   Update `README.md` with YAML configuration examples.
+*   **Configuration Validation:** Use a library like Pydantic to define configuration models (global settings, job settings) for automatic validation, type checking, and clearer error messages on invalid configuration.
 
-## Future Enhancements (Phase 2+)
+### 2. Error Handling & TUI Feedback
 
-### 2. Improved Efficiency
+*   **Graceful TUI Quit:** Implement the logic in `TransferScreen.action_request_quit` to properly signal the running `syncoid` process (e.g., via SIGTERM/SIGINT if possible) and the worker thread to stop cleanly when the user quits during an active transfer.
+*   **SSH Error Handling:** Enhance `execute_command` or the calling functions (`verify_ssh`, `execute_syncoid_transfer`) to potentially catch and interpret specific SSH connection errors (e.g., authentication failure, host unreachable) for more informative user feedback, especially in the TUI.
+*   **Syncoid Error Parsing:** In `execute_syncoid_transfer`, attempt to parse common error messages from `syncoid`'s stderr output when it fails, providing more specific reasons for failure than just the exit code in logs/TUI.
 
-*   **Direct Remote-to-Remote:** Implement an optional mode for direct `ssh source "zfs send ..." | ssh dest "zfs receive ..."` transfers (requires inter-server SSH keys).
-*   **Smarter Resume Logic:** Refine logic to potentially skip `mbuffer` if ZFS native resume (`-t token`) is active.
-*   **Reduce SSH Calls:** Explore ways to minimize repeated SSH calls for status checks within a single run.
+### 3. Code Quality & Testing Foundation
 
-### 3. Increased Flexibility & Configuration
+*   **Docstrings & Type Hinting:** Perform a pass to ensure all functions, methods, and classes have comprehensive docstrings and accurate type hints.
+*   **Basic Unit Tests:** Introduce `pytest` and write initial unit tests for critical, non-TUI functions:
+    *   `app/config.py`: Config loading/parsing logic (especially after YAML migration).
+    *   `app/utils.py`: `build_sanoid_command`.
+    *   `app/transfer.py`: `_parse_zfs_size`, `get_compression_commands`.
 
-*   **Multiple Job Support:** Refactor configuration to support defining and selecting multiple replication jobs.
-*   **Advanced Snapshot Retention:** Replace `MAX_SNAPSHOTS` with a more flexible retention scheme (e.g., keep X hourly, Y daily, Z weekly).
-*   **Bandwidth Limiting:** Add optional configuration to integrate `pv -L RATE` or `trickle` for bandwidth control.
-*   **Configurable Sync Snapshot Name:** Make the sync snapshot name (`${SNAPSHOT_PREFIX}-sync`) configurable.
+## Phase 2: Feature Expansion & Advanced Improvements
 
-### 4. Code Quality & Maintainability
+### 4. TUI Enhancements
 
-*   **Refactor Transfer Logic:** Break down large `if/elif/else` blocks in transfer functions into smaller, dynamic pipeline-building functions.
-*   **ShellCheck Integration:** Regularly run `shellcheck` on all scripts.
-*   **Consistent `local` Usage:** Ensure proper variable scoping with `local`.
-*   **Add More Comments:** Enhance comments, especially around complex logic.
+*   **Job Management:** Add TUI screens to allow users to view, create, edit, and delete replication jobs directly within the interactive interface, modifying the underlying configuration file.
+*   **Dataset Filtering:** In `DatasetScreen`, add input fields to filter the source and destination dataset lists, improving usability for hosts with many datasets.
+*   **Sanoid Policy Viewer:** Add a read-only TUI screen or section that attempts to parse the relevant sections of the configured `sanoid.conf` to display the effective snapshotting and pruning policies for the selected datasets.
 
-### 5. User Experience
+### 5. Transfer Options
 
-*   **Full Dataset Listing:** Modify `select_dataset` to list all datasets or implement filtering.
-*   **Dry-Run Mode:** Add a `--dry-run` flag to simulate actions without execution.
+*   **Direct Remote-to-Remote:** Implement an optional mode for `syncoid` to perform direct remote-to-remote transfers (`ssh source 'zfs send ...' | ssh dest 'zfs receive ...'`). This would require configuration for inter-server SSH keys and modifying the `syncoid` command construction in `perform_transfer`.
 
-### 6. Security & Documentation
+### 6. Advanced Testing
 
-*   **README Security Section:** Add documentation emphasizing securing data in transit (VPN/SSH best practices) and clarifying the script's reliance on SSH.
-*   **(Optional Future)* Consider `stunnel` integration if needed beyond SSH/VPN.
+*   **Integration Tests:** Develop integration tests that mock `subprocess` calls or use test containers (e.g., Docker) to simulate `zfs`, `ssh`, `sanoid`, and `syncoid` interactions, testing the end-to-end job execution flow (`zfs_sync.run_job`).
+*   **TUI Testing:** Explore using `textual-dev` or similar tools to write automated tests for the Textual TUI application flow and component interactions.
+
+### 7. Security Hardening
+
+*   **Review Command Injection Risks:** Double-check all uses of `execute_command` and `subprocess.Popen` to ensure user-provided configuration values (like dataset names, hostnames, SSH options) cannot lead to command injection vulnerabilities, especially if `shell=True` were ever used (which it currently isn't in critical paths). Use `shlex.quote` where appropriate if building shell command strings (though passing argument lists is preferred).
+*   **SSH Security Guidance:** Expand the README section on SSH to provide more explicit guidance on secure key generation, permissions, and avoiding insecure options.
