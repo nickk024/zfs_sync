@@ -4,6 +4,8 @@ import sys
 import subprocess
 import shlex # Import shlex for parsing options
 from pathlib import Path
+from typing import Dict, List, Any, Optional # Import typing helpers
+
 
 # --- Logging Setup ---
 def setup_logging(log_dir: Path, debug_mode: bool = False):
