@@ -63,6 +63,10 @@ class DatasetSelectScreen(Screen):
              table.add_row("No filesystems found.", key="none")
              logger.info("DataTable populated with 'No filesystems found'.")
 
+        # Set focus to the table after populating it
+        table.focus()
+        logger.debug("Focus set on DataTable.")
+
     # Add event handlers for table selection (e.g., on_data_table_row_selected)
     # def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
     #     row_key = event.row_key.value
