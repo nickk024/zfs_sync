@@ -3,7 +3,9 @@ import sys
 from zfs_sync_tool.config import manager as config_manager
 from zfs_sync_tool.zfs import interface as zfs_interface
 from zfs_sync_tool.sanoid import interface as sanoid_interface
-# Import other components like ssh, scheduler, notifications, tui as needed
+# Import TUI App
+from zfs_sync_tool.tui.app import ZfsSyncTuiApp
+# Import other components like ssh, scheduler, notifications as needed
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ class ZfsSyncApp:
             config_path: Optional path to a specific configuration file.
         """
         self.config = config_manager.load_config(config_path)
+        # Configure logging *before* doing anything else that might log
         self._configure_logging()
         logger.info("ZFS Sync Tool application initialized.")
         logger.debug(f"Loaded configuration: {self.config}")
@@ -28,7 +31,7 @@ class ZfsSyncApp:
         # self.ssh = ...
         # self.scheduler = ...
         # self.notifier = ...
-        # self.tui = ...
+        # self.tui = None # TUI instance created in run()
 
     def _configure_logging(self):
         """Configures logging based on the loaded configuration."""
@@ -40,65 +43,62 @@ class ZfsSyncApp:
         formatter = logging.Formatter(log_format)
 
         # Configure root logger
-        root_logger = logging.getLogger()
-        root_logger.setLevel(log_level)
+        # Get logger instance for the entire application module space if desired
+        # Or configure the root logger directly
+        app_logger = logging.getLogger('zfs_sync_tool') # Get logger for our package
+        app_logger.setLevel(log_level)
 
-        # Clear existing handlers (optional, prevents duplicate logs if run multiple times)
-        # for handler in root_logger.handlers[:]:
-        #     root_logger.removeHandler(handler)
+        # Prevent duplicate handlers if this is called multiple times or by libraries
+        if not app_logger.handlers:
+            # Console Handler
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(formatter)
+            app_logger.addHandler(console_handler)
 
-        # Console Handler
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
-        root_logger.addHandler(console_handler)
-
-        # File Handler (if specified)
-        if log_file:
-            try:
-                file_handler = logging.FileHandler(log_file, encoding='utf-8')
-                file_handler.setFormatter(formatter)
-                root_logger.addHandler(file_handler)
-                logger.info(f"Logging to file: {log_file}")
-            except IOError as e:
-                logger.error(f"Failed to configure file logging to {log_file}: {e}")
-        else:
-            logger.info("File logging is disabled.")
+            # File Handler (if specified)
+            if log_file:
+                try:
+                    # Use RotatingFileHandler for production?
+                    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+                    file_handler.setFormatter(formatter)
+                    app_logger.addHandler(file_handler)
+                    logger.info(f"Logging to file: {log_file}")
+                except IOError as e:
+                    logger.error(f"Failed to configure file logging to {log_file}: {e}", exc_info=True)
+            else:
+                logger.info("File logging is disabled.")
+        # Ensure root logger level is also set if libraries use it directly
+        logging.getLogger().setLevel(log_level)
 
 
     def run(self):
-        """Starts the main application execution (e.g., launches TUI or runs tasks)."""
-        logger.info("Starting ZFS Sync Tool application run...")
+        """Starts the main application execution by launching the TUI."""
+        logger.info("Starting ZFS Sync Tool TUI...")
 
-        # --- Placeholder for main logic ---
-        # This is where you would typically:
-        # 1. Initialize the TUI
-        # 2. Start the scheduler
-        # 3. Perform initial checks (ZFS/Sanoid availability, config validation)
-        # 4. Enter the main application loop (e.g., tui.run())
+        # --- Initialize and run the TUI ---
+        # Pass the instance of this core app to the TUI
+        tui_app = ZfsSyncTuiApp(core_app=self)
+        tui_app.run() # This blocks until the TUI exits
 
-        print("ZFS Sync Tool Application - Core Logic Placeholder")
-        print("Listing ZFS filesystems as an example:")
-        try:
-            filesystems = self.zfs.list_datasets("filesystem")
-            if filesystems:
-                for fs in filesystems:
-                    print(f"- {fs}")
-            else:
-                print("No filesystems found or ZFS not available.")
-        except Exception as e:
-            logger.exception("Error listing filesystems during initial run.")
-            print(f"Error listing filesystems: {e}")
-
-        logger.info("ZFS Sync Tool application run finished (placeholder).")
+        # TUI has exited
+        logger.info("ZFS Sync Tool TUI finished.")
 
 
 def main(config_path: str = None):
     """Main entry point function."""
+    # Basic logging setup until config is loaded
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    app = None # Ensure app is defined in case of init error
     try:
         app = ZfsSyncApp(config_path)
         app.run()
+        sys.exit(0) # Explicitly exit with success code
     except Exception as e:
-        logging.exception("An unhandled exception occurred during application execution.")
+        # Use the logger if the app initialized enough to configure it
+        if app and hasattr(app, 'logger'):
+             app.logger.exception("An unhandled exception occurred during application execution.")
+        else:
+             logging.exception("An unhandled exception occurred during application execution.")
         print(f"FATAL ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 

@@ -1,3 +1,7 @@
 # Core dependencies
 toml
-# Add other dependencies here as needed (e.g., textual, paramiko, apscheduler)
+
+# TUI Framework
+textual
+
+# Add other dependencies here as needed (e.g., paramiko, apscheduler)
