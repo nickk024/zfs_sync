@@ -41,8 +41,6 @@ class HostSSHScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="setup-form"): # Outer container with ID
-            # Set title after creation
-            self.query_one("#setup-form", Container).border_title = "Host & SSH"
             with VerticalScroll(): # Inner scroll container
                 # Widgets yielded inside VerticalScroll
                 yield Label("Source Host:")
@@ -66,6 +64,14 @@ class HostSSHScreen(Screen):
                 yield Static(id="status-message", classes="status-hidden") # For status/error messages
                 yield LoadingIndicator(id="loading-indicator", classes="status-hidden") # Hidden initially
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Set the border title after the widget is mounted."""
+        try:
+            container = self.query_one("#setup-form", Container)
+            container.border_title = "Host & SSH"
+        except Exception as e:
+            logging.error(f"Error setting border title for #setup-form: {e}") # Add logging
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "button-continue":

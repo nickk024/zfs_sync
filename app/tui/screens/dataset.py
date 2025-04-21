@@ -40,7 +40,6 @@ class DatasetScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="dataset-container"):
-            self.query_one("#dataset-container", Container).border_title = "Dataset Selection"
             yield Static("Select Source Dataset:", classes="section-title")
             yield LoadingIndicator(id="src-loading", classes="status-hidden")
             with VerticalScroll(id="src-dataset-scroll"):
@@ -56,7 +55,12 @@ class DatasetScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Start loading datasets when the screen is mounted."""
+        """Set title and start loading datasets when the screen is mounted."""
+        try:
+            container = self.query_one("#dataset-container", Container)
+            container.border_title = "Dataset Selection"
+        except Exception as e:
+            logging.error(f"Error setting border title for #dataset-container: {e}") # Add logging
         self.fetch_src_datasets()
         # We fetch dst datasets after src is selected or if src==dst
 

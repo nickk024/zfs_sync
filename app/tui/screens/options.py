@@ -26,7 +26,6 @@ class OptionsScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="options-form"): # Outer container
-            self.query_one("#options-form", Container).border_title = "Options"
             with VerticalScroll(): # Inner scroll
                 yield Static("Transfer Options:", classes="section-title")
                 yield Checkbox("Recursive transfer",
@@ -58,6 +57,14 @@ class OptionsScreen(Screen):
                 yield Static(id="status-message", classes="status-hidden")
 # Removed duplicated block from previous incorrect diff
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Set the border title after the widget is mounted."""
+        try:
+            container = self.query_one("#options-form", Container)
+            container.border_title = "Options"
+        except Exception as e:
+            logging.error(f"Error setting border title for #options-form: {e}") # Add logging
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "button-continue":

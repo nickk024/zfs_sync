@@ -101,7 +101,13 @@ class TransferScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Start the transfer worker when the screen is mounted."""
+        """Set title and start the transfer worker when the screen is mounted."""
+        try:
+            container = self.query_one("#transfer-container", Container)
+            container.border_title = "Transfer Progress"
+        except Exception as e:
+            logging.error(f"Error setting border title for #transfer-container: {e}") # Add logging
+
         self.query_one(Log).write_line("Transfer screen mounted. Starting worker...")
         self.update_progress_display() # Set initial state
         # Start the transfer logic in a worker thread

@@ -48,7 +48,13 @@ class SummaryScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Populate the summary table."""
+        """Set title and populate the summary table."""
+        try:
+            container = self.query_one("#summary-container", Container)
+            container.border_title = "Summary & Confirmation"
+        except Exception as e:
+            logging.error(f"Error setting border title for #summary-container: {e}") # Add logging
+
         table = self.query_one(DataTable)
         table.add_columns("Parameter", "Value")
 
