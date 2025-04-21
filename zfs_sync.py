@@ -152,7 +152,7 @@ def main():
     parser = argparse.ArgumentParser(description=f"{APP_NAME} - ZFS Snapshot Replication Tool v{VERSION}")
     parser.add_argument('-c', '--config', help='Path to configuration file (.env format). Defaults to searching ./.env')
     parser.add_argument('-j', '--job', help='Run only a specific job name defined in the config file.')
-    parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive setup mode (requires textual). Overrides --job.')
+    parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive setup mode (requires textual). This is the default unless --job or --list-jobs is specified.')
     parser.add_argument('--list-jobs', action='store_true', help='List job names defined in the config file and exit.')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
@@ -192,58 +192,65 @@ def main():
             print("No jobs defined in the configuration file.")
         sys.exit(0)
 
-    # --- Interactive Mode ---
-    if args.interactive:
+    # --- Determine Run Mode ---
+    run_interactively = True
+    if args.job or args.list_jobs:
+        run_interactively = False
+
+    # --- Execute Based on Mode ---
+    if run_interactively:
         if not TEXTUAL_AVAILABLE:
+            # This error should ideally not happen if textual is installed via requirements
             logging.error("Interactive mode requires 'textual' to be installed (`pip install textual`).")
             print("Error: Interactive mode requires 'textual'. Please install it.", file=sys.stderr)
             sys.exit(1)
 
-        logging.info("Starting interactive mode...")
+        logging.info("Starting interactive mode (default)...")
         app = ZFSSyncApp(config=config)
         app.run()
         logging.info("Interactive session finished.")
         print("\nInteractive session finished.")
         sys.exit(0)
-
-    # --- Non-Interactive Job Execution ---
-    if 'jobs' not in config or not config['jobs']:
-        logging.error("No jobs defined in the configuration file.")
-        sys.exit(1)
-
-    jobs_to_run = {}
-    if args.job:
-        if args.job not in config['jobs']:
-            logging.error(f"Job '{args.job}' not found in configuration file.")
-            sys.exit(1)
-        jobs_to_run[args.job] = config['jobs'][args.job]
-        logging.info(f"Running specified job: {args.job}")
     else:
-        jobs_to_run = config['jobs']
-        logging.info("Running all jobs defined in configuration file.")
+        # --- Non-Interactive Job Execution ---
+        if 'jobs' not in config or not config['jobs']:
+            logging.error("No jobs defined in the configuration file.")
+            sys.exit(1)
 
-    overall_success = True
-    for job_name, job_data in jobs_to_run.items():
-        if not isinstance(job_data, dict):
-             logging.warning(f"Job '{job_name}' has invalid configuration (not a dictionary). Skipping.")
-             overall_success = False
-             continue
+        jobs_to_run = {}
+        if args.job:
+            if args.job not in config['jobs']:
+                logging.error(f"Job '{args.job}' not found in configuration file.")
+                sys.exit(1)
+            jobs_to_run[args.job] = config['jobs'][args.job]
+            logging.info(f"Running specified job: {args.job}")
+        else:
+            # If --list-jobs wasn't used, and --job wasn't used, run all jobs
+            jobs_to_run = config['jobs']
+            logging.info("Running all jobs defined in configuration file.")
 
-        # Add name to config dict for validation, but pass original job_data to run_job
-        temp_job_config = {'name': job_name, **job_data}
-        if not validate_job_config(temp_job_config):
-            logging.warning(f"Job '{job_name}' has invalid configuration. Skipping.")
-            overall_success = False
-            continue
+        overall_success = True
+        for job_name, job_data in jobs_to_run.items():
+            if not isinstance(job_data, dict):
+                 logging.warning(f"Job '{job_name}' has invalid configuration (not a dictionary). Skipping.")
+                 overall_success = False
+                 continue
 
-        # Pass the original job_data (without the injected 'name') and the global config
-        job_success = run_job(job_data, config) # Pass original job_data
-        if not job_success:
-            overall_success = False
-            logging.error(f"Job '{job_name}' failed.")
+            # Add name to config dict for validation, but pass original job_data to run_job
+            temp_job_config = {'name': job_name, **job_data}
+            if not validate_job_config(temp_job_config):
+                logging.warning(f"Job '{job_name}' has invalid configuration. Skipping.")
+                overall_success = False
+                continue
 
-    logging.info("All specified jobs processed.")
-    sys.exit(0 if overall_success else 1)
+            # Pass the original job_data (without the injected 'name') and the global config
+            job_success = run_job(job_data, config) # Pass original job_data
+            if not job_success:
+                overall_success = False
+                logging.error(f"Job '{job_name}' failed.")
+
+        logging.info("All specified jobs processed.")
+        sys.exit(0 if overall_success else 1)
 
 
 if __name__ == "__main__":
