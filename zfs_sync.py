@@ -150,7 +150,7 @@ def run_job(job_config: Dict[str, Any], config: Dict[str, Any]) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description=f"{APP_NAME} - ZFS Snapshot Replication Tool v{VERSION}")
-    parser.add_argument('-c', '--config', help='Path to configuration file (YAML format). Defaults to searching ./zfs_sync.yaml, ~/.config/zfs_sync/config.yaml')
+    parser.add_argument('-c', '--config', help='Path to configuration file (.env format). Defaults to searching ./.env')
     parser.add_argument('-j', '--job', help='Run only a specific job name defined in the config file.')
     parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive setup mode (requires textual). Overrides --job.')
     parser.add_argument('--list-jobs', action='store_true', help='List job names defined in the config file and exit.')
