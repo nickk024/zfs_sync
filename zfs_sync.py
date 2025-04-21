@@ -24,7 +24,9 @@ from app.transfer import perform_transfer
 try:
     from app.tui import ZFSSyncApp
     TEXTUAL_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    # Print the specific import error to help diagnose
+    print(f"DEBUG: Caught ImportError during TUI import: {e}", file=sys.stderr)
     TEXTUAL_AVAILABLE = False
     ZFSSyncApp = None # Placeholder
 
