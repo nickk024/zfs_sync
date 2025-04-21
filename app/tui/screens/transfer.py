@@ -18,45 +18,29 @@ from ...zfs import has_dataset # Keep has_dataset for checks
 # Import the new unified transfer function
 from ...transfer import perform_transfer
 # Import execute_command for sanoid helper
-from ...utils import execute_command
+from ...utils import execute_command, build_sanoid_command # Import new helper
 
 # --- Helper to run Sanoid (Async version for TUI worker) ---
 
 async def run_sanoid_command_async(screen_instance: 'TransferScreen', action: str, host: str, ssh_user: Optional[str], run_config: Dict[str, Any]) -> bool:
-    """Helper function to execute sanoid commands asynchronously via the TUI worker."""
-    sanoid_executable = run_config.get('SANOID_PATH', 'libs/sanoid/sanoid')
-    sanoid_conf = run_config.get('SANOID_CONF_PATH', '/etc/sanoid/sanoid.conf')
-    dry_run = run_config.get('DRY_RUN', False)
+    """Helper function to execute sanoid commands asynchronously using the centralized builder."""
+    dry_run = run_config.get('DRY_RUN', False) # Still need dry_run for logging logic here
 
-    cmd = [sanoid_executable]
-
-    # Config directory logic (same as in zfs_sync.py)
-    conf_dir = None
-    if sanoid_conf:
-        # Check local existence - this might need adjustment for remote execution context
-        if os.path.exists(sanoid_conf):
-            if os.path.isfile(sanoid_conf):
-                 conf_dir = os.path.dirname(sanoid_conf)
-            elif os.path.isdir(sanoid_conf):
-                 conf_dir = sanoid_conf
-        else:
-            conf_dir = os.path.dirname(sanoid_conf) # Assume remote path
-
-    if conf_dir:
-         cmd.extend(['--configdir', conf_dir])
-
-    if action == "take":
-        cmd.append('--take-snapshots')
-        log_action = "Taking snapshots"
-    elif action == "prune":
-        cmd.append('--prune-snapshots')
-        log_action = "Pruning snapshots"
-    else:
-        screen_instance.log_message(f"Invalid sanoid action requested: {action}", level=logging.ERROR)
+    try:
+        cmd = build_sanoid_command(action, run_config)
+    except ValueError as e:
+        screen_instance.log_message(str(e), level=logging.ERROR)
         return False
 
-    if dry_run:
-        cmd.append('--readonly')
+    # Determine log action string based on the original action requested
+    if action == "take":
+        log_action = "Taking snapshots"
+    elif action == "prune":
+        log_action = "Pruning snapshots"
+    else:
+        # This case should not be reached if build_sanoid_command raises ValueError
+        log_action = f"action '{action}'"
+
         screen_instance.log_message(f"[DRY RUN] Would execute sanoid on {host}: {' '.join(shlex.quote(c) for c in cmd)}")
         try:
             # Run async via worker thread pool
@@ -172,11 +156,13 @@ class TransferScreen(Screen):
                 self.log_message("Destination dataset does not exist. Syncoid will create it.")
 
             # --- Take Snapshots using Sanoid ---
+            self.log_message("Taking source snapshots via sanoid...")
             snap_success = await run_sanoid_command_async(
                 self, "take", src_host, ssh_user if src_host != "local" else None, run_config
             )
             if not snap_success:
                  raise Exception("Failed to take snapshots on source using sanoid.")
+            self.log_message("Sanoid snapshot creation finished.")
 
             # --- Perform Transfer using Syncoid ---
             self.log_message("Starting syncoid transfer...")

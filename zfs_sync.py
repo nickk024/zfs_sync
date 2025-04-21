@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 # Import local library modules
 from app.config import load_config, find_config_file, validate_job_config
 # Import execute_command directly for sanoid calls
-from app.utils import setup_logging, verify_ssh, check_command_exists, execute_command
+from app.utils import setup_logging, verify_ssh, check_command_exists, execute_command, build_sanoid_command # Import new helper
 from app.zfs import (
     # create_snapshot, # Replaced by sanoid --take-snapshots
     # destroy_snapshots_except, # Replaced by sanoid --prune-snapshots
@@ -38,51 +38,24 @@ VERSION = "1.2.0" # Updated version
 # --- Helper to run Sanoid ---
 
 def run_sanoid_command(action: str, host: str, ssh_user: Optional[str], run_config: Dict[str, Any]) -> bool:
-    """Helper function to execute sanoid commands."""
-    sanoid_executable = run_config.get('SANOID_PATH', 'libs/sanoid/sanoid')
-    sanoid_conf = run_config.get('SANOID_CONF_PATH', '/etc/sanoid/sanoid.conf') # Default path
-    dry_run = run_config.get('DRY_RUN', False)
+    """Helper function to execute sanoid commands using the centralized builder."""
+    dry_run = run_config.get('DRY_RUN', False) # Still need dry_run for logging logic here
 
-    cmd = [sanoid_executable]
-
-    # Check if config file exists locally before trying to use it remotely
-    # This check assumes sanoid needs the config file present *where sanoid runs*
-    # If running remotely via SSH, this local check might not be sufficient,
-    # but sanoid itself should handle config loading on the target.
-    # We add --configdir=/path/to/config if specified.
-    # Note: Sanoid typically looks in /etc/sanoid by default.
-    # If SANOID_CONF_PATH points to a file, extract the directory.
-    conf_dir = None
-    if sanoid_conf:
-        # Check if the path exists locally before trying to determine if it's a file/dir
-        # This check is local, remote path existence isn't verified here.
-        if os.path.exists(sanoid_conf):
-            if os.path.isfile(sanoid_conf):
-                 conf_dir = os.path.dirname(sanoid_conf)
-            elif os.path.isdir(sanoid_conf): # Allow specifying directory directly
-                 conf_dir = sanoid_conf
-        else:
-            # If path doesn't exist locally, assume it's a remote path or default
-            # and pass the directory containing the specified file path.
-            # This might need refinement based on how sanoid handles remote configs.
-            conf_dir = os.path.dirname(sanoid_conf)
-
-
-    if conf_dir:
-         cmd.extend(['--configdir', conf_dir])
-
-    if action == "take":
-        cmd.append('--take-snapshots')
-        log_action = "Taking snapshots"
-    elif action == "prune":
-        cmd.append('--prune-snapshots')
-        log_action = "Pruning snapshots"
-    else:
-        logging.error(f"Invalid sanoid action requested: {action}")
+    try:
+        cmd = build_sanoid_command(action, run_config)
+    except ValueError as e:
+        logging.error(str(e))
         return False
 
-    if dry_run:
-        cmd.append('--readonly') # Use sanoid's readonly/dry-run equivalent
+    # Determine log action string based on the original action requested
+    if action == "take":
+        log_action = "Taking snapshots"
+    elif action == "prune":
+        log_action = "Pruning snapshots"
+    else:
+        # This case should not be reached if build_sanoid_command raises ValueError
+        log_action = f"action '{action}'"
+
         logging.info(f"[DRY RUN] Would execute sanoid on {host}: {' '.join(shlex.quote(c) for c in cmd)}")
         # Simulate success for dry run, though sanoid might show what it would do
         try:

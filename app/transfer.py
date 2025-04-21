@@ -11,7 +11,8 @@ from typing import Optional, List, Dict, Any, TYPE_CHECKING
 # Import necessary functions from other modules within the 'lib' package
 from .utils import execute_command, check_command_exists
 # Keep zfs utils for now, might remove later
-from .zfs import estimate_transfer_size, get_receive_resume_token, has_dataset
+# estimate_transfer_size, get_receive_resume_token, has_dataset are no longer needed here
+# as syncoid handles resume and size estimation, and dataset checks happen before calling perform_transfer.
 
 # Type hint for the TUI screen without causing circular import
 if TYPE_CHECKING:
@@ -52,9 +53,9 @@ def _parse_zfs_size(size_str: str) -> int:
 
 # TODO: Refactor this function to parse `syncoid --progress` output
 # Note: The 'app' parameter here is actually the TransferScreen instance
-def _process_zfs_stderr(stderr_pipe, app: 'TransferScreen', total_size: Optional[int]):
+def _process_zfs_stderr(stderr_pipe, app: 'TransferScreen'):
     """
-    Reads zfs send stderr, parses progress, and updates the Textual TUI via the screen instance.
+    Reads syncoid stderr, parses progress, and updates the Textual TUI via the screen instance.
     Runs in a separate thread.
     *** THIS NEEDS REFACTORING FOR SYNCOID ***
     """
@@ -124,25 +125,25 @@ def _process_zfs_stderr(stderr_pipe, app: 'TransferScreen', total_size: Optional
             # Poller timeout handles waiting
 
     app.log_message("Stderr processing thread finished.", level=logging.DEBUG)
-    # Ensure progress reaches 100% in TUI if total size was known
-    if total_size is not None:
-        # Use the app's reactive variables as the source of truth for completion check
-        # as the thread might finish slightly after the main process signals completion
-        final_completed = app.completed_bytes
-        if final_completed < total_size:
-            app.log_message(f"Transfer finished but reported bytes ({final_completed}) < estimated ({total_size}). Setting to 100%.", level=logging.WARNING)
-            app.update_progress(completed=total_size, total=total_size)
+    # Ensure progress reaches 100% in TUI if the total was determined
+    # Use the app's reactive variables as the source of truth
+    final_total = app.total_bytes
+    final_completed = app.completed_bytes
+    if final_total is not None and final_total > 0:
+        if final_completed < final_total:
+            app.log_message(f"Transfer finished but reported bytes ({final_completed}) < total ({final_total}). Setting to 100%.", level=logging.WARNING)
+            app.update_progress(completed=final_total, total=final_total)
         else:
             # Ensure it's exactly at total if slightly over or already there
-             app.update_progress(completed=total_size, total=total_size)
-    elif total_bytes_reported > 0: # If size was unknown, mark complete with reported bytes
+             app.update_progress(completed=final_total, total=final_total)
+    elif total_bytes_reported > 0: # If size was unknown but we reported some progress
          app.update_progress(completed=total_bytes_reported, total=total_bytes_reported)
 
 
 # --- Simplified Execution (Replaces execute_transfer_pipeline) ---
 # We might need a more robust way to handle syncoid's output/progress later
 
-def execute_syncoid_transfer(syncoid_cmd: List[str], config: dict, app: Optional['TransferScreen'], total_size: Optional[int]) -> bool:
+def execute_syncoid_transfer(syncoid_cmd: List[str], config: dict, app: Optional['TransferScreen']) -> bool:
     """
     Executes a single syncoid command, capturing stderr for TUI progress.
     """
@@ -202,7 +203,7 @@ def execute_syncoid_transfer(syncoid_cmd: List[str], config: dict, app: Optional
         if is_tui_run:
             stderr_pipe_read_end = process.stderr
             # Start the stderr processing thread (needs refactoring for syncoid)
-            stderr_thread = threading.Thread(target=_process_zfs_stderr, args=(stderr_pipe_read_end, app, total_size), daemon=True)
+            stderr_thread = threading.Thread(target=_process_zfs_stderr, args=(stderr_pipe_read_end, app), daemon=True)
             stderr_thread.start()
 
         # Capture stdout for logging after completion
@@ -357,7 +358,7 @@ def perform_transfer(job_config: dict, config: dict, app: Optional['TransferScre
 
     # --- Estimate Size (using syncoid -n) ---
     # Size estimation is now handled within execute_syncoid_transfer during dry run
-    total_size = None # Will be estimated by the execution function if dry run
+    # total_size is no longer estimated here, execute_syncoid_transfer handles dry run estimate
 
     # --- Execute Syncoid ---
     log_func(f"Starting syncoid transfer at {datetime.now()}")
@@ -367,7 +368,7 @@ def perform_transfer(job_config: dict, config: dict, app: Optional['TransferScre
 
     try:
         # Execute the syncoid command
-        success = execute_syncoid_transfer(syncoid_cmd, run_config, app, total_size)
+        success = execute_syncoid_transfer(syncoid_cmd, run_config, app)
 
         if success:
             log_func("Syncoid transfer completed successfully.")
@@ -388,19 +389,7 @@ def perform_transfer(job_config: dict, config: dict, app: Optional['TransferScre
         return False
 
 
-# --- Keep Original Functions (Commented Out/To Be Removed) ---
-
-# def perform_full_transfer(job_config: dict, config: dict, new_snapshot_name: str, app: Optional['TransferScreen']) -> bool:
-#     """Performs a full ZFS transfer (initial replication) updating the Textual TUI if app is provided."""
-#     # ... (Original implementation using execute_transfer_pipeline) ...
-#     pass # Remove or comment out fully
-
-# def perform_incremental_transfer(job_config: dict, config: dict, new_snapshot_name: str, base_snapshot_name: str, app: Optional['TransferScreen']) -> bool:
-#     """Performs an incremental ZFS transfer updating the Textual TUI if app is provided."""
-#     # ... (Original implementation using execute_transfer_pipeline) ...
-#     pass # Remove or comment out fully
-
-# def execute_transfer_pipeline(pipeline_cmds: List[List[str]], config: dict, app: Optional['TransferScreen'], total_size: Optional[int]) -> bool:
-#      """Executes a ZFS transfer pipeline using Popen..."""
-#      # ... (Original implementation) ...
-#      pass # Remove or comment out fully
+# --- Old Transfer Functions (Removed) ---
+# Original perform_full_transfer, perform_incremental_transfer, and execute_transfer_pipeline
+# functions were here. They have been removed as the logic is now unified in
+# perform_transfer using syncoid.

@@ -32,6 +32,49 @@ def setup_logging(log_dir: Path, debug_mode: bool = False):
                         ])
     logging.info(f"Logging initialized. Log file: {log_file}")
 
+
+# --- Sanoid Command Building ---
+
+def build_sanoid_command(action: str, run_config: Dict[str, Any]) -> List[str]:
+    """Builds the command list for executing a sanoid action."""
+    sanoid_executable = run_config.get('SANOID_PATH', 'libs/sanoid/sanoid')
+    sanoid_conf = run_config.get('SANOID_CONF_PATH', '/etc/sanoid/sanoid.conf')
+    dry_run = run_config.get('dry_run', run_config.get('DRY_RUN', False))
+
+    cmd = [sanoid_executable]
+
+    # Config directory logic (same as original implementations)
+    conf_dir = None
+    if sanoid_conf:
+        # Local existence check - might need adjustment for remote context
+        # This check is primarily for finding the *directory* containing the config.
+        # Sanoid itself handles loading the config on the target host.
+        if os.path.exists(sanoid_conf):
+            if os.path.isfile(sanoid_conf):
+                 conf_dir = os.path.dirname(sanoid_conf)
+            elif os.path.isdir(sanoid_conf):
+                 conf_dir = sanoid_conf
+        else:
+            # If path doesn't exist locally, assume it's a remote path or default
+            # and pass the directory containing the specified file path.
+            conf_dir = os.path.dirname(sanoid_conf)
+
+    if conf_dir:
+         cmd.extend(['--configdir', conf_dir])
+
+    if action == "take":
+        cmd.append('--take-snapshots')
+    elif action == "prune":
+        cmd.append('--prune-snapshots')
+    else:
+        # Raise an error for invalid action, let caller handle logging
+        raise ValueError(f"Invalid sanoid action requested: {action}")
+
+    if dry_run:
+        cmd.append('--readonly') # Use sanoid's readonly/dry-run equivalent
+
+    return cmd
+
 # --- Command Execution ---
 def execute_command(command_args, host: str = "local", ssh_user: str = None,
                     config: dict = None, check: bool = True, capture_output: bool = True,
@@ -119,34 +162,53 @@ def execute_command(command_args, host: str = "local", ssh_user: str = None,
     is_action_command = False
     read_only_zfs = {'list', 'get', 'version'}
     action_zfs = {'snapshot', 'destroy', 'send', 'receive', 'rename'}
+    action_sanoid = {'--take-snapshots', '--prune-snapshots'} # Sanoid actions
+    # Syncoid is always an action unless -n is present (handled later)
 
-    # Determine if the *intended* command is a ZFS action command
+    # Determine if the *intended* command is an action command
     # This uses the original `command_args` before potential SSH wrapping
     is_action_command = False
-    if isinstance(command_args, list) and command_args and command_args[0] == 'zfs':
-        subcommand = command_args[1] if len(command_args) > 1 else None
-        if subcommand in action_zfs:
-            is_action_command = True
-        elif subcommand not in read_only_zfs:
-            # Treat unknown ZFS subcommands as actions for safety
-            logging.warning(f"Unclassified ZFS subcommand '{subcommand}' treated as action for dry run.")
-            is_action_command = True
+    cmd_base = None
+    if isinstance(command_args, list) and command_args:
+        cmd_base = os.path.basename(command_args[0]) # Get executable name (e.g., zfs, sanoid, syncoid)
+        if cmd_base == 'zfs':
+            subcommand = command_args[1] if len(command_args) > 1 else None
+            if subcommand in action_zfs:
+                is_action_command = True
+            elif subcommand not in read_only_zfs:
+                logging.warning(f"Unclassified ZFS subcommand '{subcommand}' treated as action for dry run.")
+                is_action_command = True
+        elif cmd_base == 'sanoid':
+            # Check if any action flags are present
+            if any(flag in action_sanoid for flag in command_args):
+                 is_action_command = True
+        elif cmd_base == 'syncoid':
+             # Syncoid is always an action unless '-n' is present
+             if '-n' not in command_args:
+                  is_action_command = True
+        # else: Non zfs/sanoid/syncoid command - currently not treated as action
+
     elif isinstance(command_args, str) and shell:
-        # For shell commands, we conservatively assume it might be an action in dry run,
-        # unless it clearly starts with a known read-only command.
-        # This is imperfect but safer than trying to parse complex shell strings.
+        # Basic check for shell commands - less reliable
         is_action_command = True # Default to action for shell=True
         try:
-            first_cmd_part = shlex.split(command_args)[0]
-            if first_cmd_part == 'zfs':
-                subcommand = shlex.split(command_args)[1] if len(shlex.split(command_args)) > 1 else None
+            split_cmd = shlex.split(command_args)
+            cmd_base = os.path.basename(split_cmd[0]) if split_cmd else None
+            if cmd_base == 'zfs':
+                subcommand = split_cmd[1] if len(split_cmd) > 1 else None
                 if subcommand in read_only_zfs:
-                    is_action_command = False # It's a read-only ZFS command even in shell mode
+                    is_action_command = False
+            elif cmd_base == 'sanoid':
+                 if not any(flag in action_sanoid for flag in split_cmd):
+                      is_action_command = False # No action flags found
+            elif cmd_base == 'syncoid':
+                 if '-n' in split_cmd:
+                      is_action_command = False # Dry run flag present
+            # else: Keep is_action_command = True for other shell commands
         except Exception:
-            pass # Ignore parsing errors, stick with is_action_command = True
+            pass # Ignore parsing errors
 
-    # Note: Non-ZFS commands are currently always executed, even in dry run.
-    # If specific non-ZFS commands should be skipped, add classification here.
+    # Note: Non zfs/sanoid/syncoid commands are currently always executed in dry run.
 
     # Get a string representation for logging (use the potentially wrapped command)
     if isinstance(full_command_list_or_str, list):
@@ -225,7 +287,8 @@ def check_command_exists(command: str) -> bool:
 def check_prerequisites(config: dict):
     """Checks for required command-line tools."""
     logging.info("Checking for required tools...")
-    required = ["zfs", "ssh"] # Removed 'pv' as it's no longer used
+    # Check for perl as sanoid/syncoid are perl scripts
+    required = ["zfs", "ssh", "perl"]
     all_found = True
     for cmd in required:
         if not check_command_exists(cmd):
