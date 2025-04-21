@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional # Added Optional
 import json # Needed for saving state
 from pathlib import Path # Needed for saving state
 
@@ -8,6 +8,8 @@ from textual.containers import VerticalScroll, Container # Import Container
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Static, Button, Input, Label, LoadingIndicator
 from textual.binding import Binding
+from textual.worker import Worker, WorkerState # Import Worker and WorkerState
+from textual.reactive import reactive # Import reactive for the worker attribute
 
 # Assuming these are moved or accessible
 # from ..app import ZFSSyncApp # Or however the app instance is accessed
@@ -27,6 +29,8 @@ def _save_interactive_state(state_file: Path, state: Dict[str, Any]):
 
 class HostSSHScreen(Screen):
     """Screen for entering Host and SSH details."""
+
+    worker: reactive[Optional[Worker]] = reactive(None) # Add worker attribute
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back", show=False),
         Binding("ctrl+q", "app.quit", "Quit", show=False),
@@ -107,9 +111,10 @@ class HostSSHScreen(Screen):
             loading.remove_class("status-hidden")
 
             # --- Perform Verification (potentially long running) ---
-            self.app.run_worker(
+            # Store the worker so we can watch its state
+            self.worker = self.app.run_worker(
                 self.verify_connections(src_host, dst_host, ssh_user),
-                callback=self.update_verification_status, # Pass UI update method as callback
+                # No callback here
                 exclusive=True,
                 group="ssh_verify" # Optional: group the worker
             )
@@ -182,6 +187,54 @@ class HostSSHScreen(Screen):
             status_label.update(f"[red]Verification Failed: {error_msg}[/]")
             # Re-enable inputs/button to allow correction
             button.disabled = False
+
+    def watch_worker(self, worker: Optional[Worker]) -> None:
+        """Called when the worker attribute changes.
+
+        This method will update the UI based on the worker state.
+        """
+        if worker is None:
+            # Worker has finished or hasn't started
+            return
+
+        # Update UI based on worker state
+        if worker.state == WorkerState.PENDING:
+            # Optional: Update UI to show pending state if needed
+            pass
+        elif worker.state == WorkerState.RUNNING:
+            # Optional: Update UI to show running state if needed
+            pass
+        elif worker.state == WorkerState.SUCCESS:
+            # Worker finished successfully, get result and update UI
+            result = worker.result
+            self.update_verification_status(result)
+            self.worker = None # Clear the worker attribute
+        elif worker.state == WorkerState.ERROR:
+            # Worker failed, log error and update UI
+            logging.error(f"SSH verification worker failed: {worker.error}")
+            # Pass a failure state to the UI update method
+            # Assuming result format is (bool, bool, str)
+            self.update_verification_status((False, False, str(worker.error)))
+            self.worker = None # Clear the worker attribute
+        elif worker.state == WorkerState.CANCELLED:
+            # Optional: Handle cancellation if needed
+            logging.info("SSH verification worker cancelled.")
+            # Update UI to show cancellation
+            status_label = self.query_one("#status-message", Static)
+            loading = self.query_one("#loading-indicator", LoadingIndicator)
+            button = self.query_one("#button-continue", Button)
+            src_host_input = self.query_one("#input-src-host", Input)
+            dst_host_input = self.query_one("#input-dst-host", Input)
+            ssh_user_input = self.query_one("#input-ssh-user", Input)
+
+            loading.add_class("status-hidden")
+            status_label.update("[yellow]Verification Cancelled.[/]")
+            button.disabled = False
+            src_host_input.disabled = False
+            dst_host_input.disabled = False
+            ssh_user_input.disabled = False
+            self.worker = None # Clear the worker attribute
+
             src_host_input.disabled = False
             dst_host_input.disabled = False
             ssh_user_input.disabled = False
