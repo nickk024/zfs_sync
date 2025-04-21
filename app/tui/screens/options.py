@@ -25,35 +25,37 @@ class OptionsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with VerticalScroll(id="options-form", border_title="Options"):
-            yield Static("Transfer Options:", classes="section-title")
-            yield Checkbox("Recursive transfer",
+        with Container(id="options-form", border_title="Options"): # Outer container
+            with VerticalScroll(): # Inner scroll
+                yield Static("Transfer Options:", classes="section-title")
+                yield Checkbox("Recursive transfer",
                            value=self.config.get('DEFAULT_RECURSIVE', True),
                            id="check-recursive")
-            yield Checkbox("Use compression during transfer",
+                yield Checkbox("Use compression during transfer",
                            value=self.config.get('DEFAULT_USE_COMPRESSION', True),
                            id="check-compression")
-            yield Checkbox("Enable resume support for initial transfer",
+                yield Checkbox("Enable resume support for initial transfer",
                            value=self.config.get('DEFAULT_RESUME_SUPPORT', True),
                            id="check-resume")
 
-            yield Static("Snapshot Options:", classes="section-title")
-            yield Label("Snapshot Prefix:")
-            yield Input(value=self.config.get('DEFAULT_SNAPSHOT_PREFIX', 'zfs-sync'),
-                        id="input-prefix")
-            yield Label("Max Snapshots to keep on destination:")
-            yield Input(value=str(self.config.get('DEFAULT_MAX_SNAPSHOTS', 5)),
-                        id="input-max-snapshots",
-                        validators=[Integer(minimum=0, failure_description="Must be a non-negative number.")])
+                yield Static("Snapshot Options:", classes="section-title")
+                yield Label("Snapshot Prefix:")
+                yield Input(value=self.config.get('DEFAULT_SNAPSHOT_PREFIX', 'zfs-sync'),
+                            id="input-prefix")
+                yield Label("Max Snapshots to keep on destination:")
+                yield Input(value=str(self.config.get('DEFAULT_MAX_SNAPSHOTS', 5)),
+                            id="input-max-snapshots",
+                            validators=[Integer(minimum=0, failure_description="Must be a non-negative number.")])
 
-            yield Static("Execution Options:", classes="section-title")
-            yield Checkbox("Perform a dry run (show commands without executing)?",
+                yield Static("Execution Options:", classes="section-title")
+                yield Checkbox("Perform a dry run (show commands without executing)?",
                            value=False, # Default dry run to False for interactive
                            id="check-dry-run")
 
-            yield Static() # Spacer
-            yield Button("Review & Start", variant="primary", id="button-continue")
-            yield Static(id="status-message", classes="status-hidden")
+                yield Static() # Spacer
+                yield Button("Review & Start", variant="primary", id="button-continue")
+                yield Static(id="status-message", classes="status-hidden")
+# Removed duplicated block from previous incorrect diff
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

@@ -40,27 +40,29 @@ class HostSSHScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with VerticalScroll(id="setup-form", border_title="Host & SSH"):
-            yield Label("Source Host:")
-            yield Input(
-                value=self.initial_state.get('last_src_host', self.config.get('DEFAULT_SOURCE_HOST', 'local')),
-                id="input-src-host"
-            )
-            yield Label("Destination Host:")
-            yield Input(
-                value=self.initial_state.get('last_dst_host', self.config.get('DEFAULT_DEST_HOST', '')),
-                placeholder="e.g., backup-server.local or user@host",
-                id="input-dst-host"
-            )
-            yield Label("SSH User:")
-            yield Input(
-                value=self.initial_state.get('last_ssh_user', self.config.get('DEFAULT_SSH_USER', 'root')),
-                id="input-ssh-user"
-            )
-            yield Static() # Spacer
-            yield Button("Verify & Continue", variant="primary", id="button-continue")
-            yield Static(id="status-message", classes="status-hidden") # For status/error messages
-            yield LoadingIndicator(id="loading-indicator", classes="status-hidden") # Hidden initially
+        with Container(id="setup-form", border_title="Host & SSH"): # Outer container with ID and title
+            with VerticalScroll(): # Inner scroll container
+                # Widgets yielded inside VerticalScroll
+                yield Label("Source Host:")
+                yield Input(
+                    value=self.initial_state.get('last_src_host', self.config.get('DEFAULT_SOURCE_HOST', 'local')),
+                    id="input-src-host"
+                )
+                yield Label("Destination Host:")
+                yield Input(
+                    value=self.initial_state.get('last_dst_host', self.config.get('DEFAULT_DEST_HOST', '')),
+                    placeholder="e.g., backup-server.local or user@host",
+                    id="input-dst-host"
+                )
+                yield Label("SSH User:")
+                yield Input(
+                    value=self.initial_state.get('last_ssh_user', self.config.get('DEFAULT_SSH_USER', 'root')),
+                    id="input-ssh-user"
+                )
+                yield Static() # Spacer
+                yield Button("Verify & Continue", variant="primary", id="button-continue")
+                yield Static(id="status-message", classes="status-hidden") # For status/error messages
+                yield LoadingIndicator(id="loading-indicator", classes="status-hidden") # Hidden initially
         yield Footer()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:

@@ -24,9 +24,18 @@ class SummaryScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with VerticalScroll(id="summary-container", border_title="Summary & Confirmation"):
-            yield Static("Configuration Summary", classes="section-title")
-            # Use DataTable for a structured summary
+        with Container(id="summary-container", border_title="Summary & Confirmation"): # Outer container
+            with VerticalScroll(): # Inner scroll
+                yield Static("Configuration Summary", classes="section-title")
+                # Use DataTable for a structured summary
+                yield DataTable(id="summary-table", show_header=False, show_cursor=False)
+                yield Static() # Spacer
+                yield Horizontal(
+                    Button("Back", id="button-back"),
+                    Button("Start Sync", variant="primary", id="button-start"),
+                    id="summary-buttons"
+                )
+                yield Static(id="status-message", classes="status-hidden")
             yield DataTable(id="summary-table", show_header=False, show_cursor=False)
             yield Static() # Spacer
             yield Horizontal(
