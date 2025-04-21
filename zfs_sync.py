@@ -192,13 +192,10 @@ def main():
             print("No jobs defined in the configuration file.")
         sys.exit(0)
 
-    # --- Determine Run Mode ---
-    run_interactively = True
-    if args.job or args.list_jobs:
-        run_interactively = False
-
     # --- Execute Based on Mode ---
-    if run_interactively:
+    # Default to interactive mode unless --job or --list-jobs is specified
+    if not args.job and not args.list_jobs:
+        # --- Interactive Mode ---
         if not TEXTUAL_AVAILABLE:
             # This error should ideally not happen if textual is installed via requirements
             logging.error("Interactive mode requires 'textual' to be installed (`pip install textual`).")
@@ -211,46 +208,42 @@ def main():
         logging.info("Interactive session finished.")
         print("\nInteractive session finished.")
         sys.exit(0)
-    else:
+    elif args.job:
         # --- Non-Interactive Job Execution ---
         if 'jobs' not in config or not config['jobs']:
+            # Check if jobs exist before trying to access the specific one
             logging.error("No jobs defined in the configuration file.")
             sys.exit(1)
 
-        jobs_to_run = {}
-        if args.job:
-            if args.job not in config['jobs']:
-                logging.error(f"Job '{args.job}' not found in configuration file.")
-                sys.exit(1)
-            jobs_to_run[args.job] = config['jobs'][args.job]
-            logging.info(f"Running specified job: {args.job}")
-        else:
-            # If --list-jobs wasn't used, and --job wasn't used, run all jobs
-            jobs_to_run = config['jobs']
-            logging.info("Running all jobs defined in configuration file.")
+        if args.job not in config['jobs']:
+            logging.error(f"Job '{args.job}' not found in configuration file.")
+            sys.exit(1)
 
-        overall_success = True
-        for job_name, job_data in jobs_to_run.items():
-            if not isinstance(job_data, dict):
-                 logging.warning(f"Job '{job_name}' has invalid configuration (not a dictionary). Skipping.")
-                 overall_success = False
-                 continue
+        job_data = config['jobs'][args.job]
+        logging.info(f"Running specified job: {args.job}")
 
-            # Add name to config dict for validation, but pass original job_data to run_job
-            temp_job_config = {'name': job_name, **job_data}
-            if not validate_job_config(temp_job_config):
-                logging.warning(f"Job '{job_name}' has invalid configuration. Skipping.")
-                overall_success = False
-                continue
+        # Validate the specific job
+        if not isinstance(job_data, dict):
+             logging.warning(f"Job '{args.job}' has invalid configuration (not a dictionary). Skipping.")
+             sys.exit(1)
 
-            # Pass the original job_data (without the injected 'name') and the global config
-            job_success = run_job(job_data, config) # Pass original job_data
-            if not job_success:
-                overall_success = False
-                logging.error(f"Job '{job_name}' failed.")
+        temp_job_config = {'name': args.job, **job_data}
+        if not validate_job_config(temp_job_config):
+            logging.warning(f"Job '{args.job}' has invalid configuration. Skipping.")
+            sys.exit(1)
 
-        logging.info("All specified jobs processed.")
-        sys.exit(0 if overall_success else 1)
+        # Run the single job
+        job_success = run_job(job_data, config)
+        if not job_success:
+            logging.error(f"Job '{args.job}' failed.")
+
+        logging.info(f"Job '{args.job}' processed.")
+        sys.exit(0 if job_success else 1)
+    # Note: The case for args.list_jobs is handled earlier by exiting.
+    # If neither interactive nor --job is specified, something is wrong.
+    else:
+         logging.error("Internal logic error: Should have run interactive or a specific job.")
+         sys.exit(1)
 
 
 if __name__ == "__main__":
