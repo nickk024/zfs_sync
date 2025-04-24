@@ -1,0 +1,173 @@
+/* ZFS Sync Tool TUI Styles */
+
+/* Global styles */
+Screen {
+    background: $surface;
+    color: $text;
+}
+
+/* Header and footer */
+Header {
+    background: $primary;
+    color: $text;
+    dock: top;
+    height: 1;
+}
+
+Footer {
+    background: $primary;
+    color: $text;
+    dock: bottom;
+    height: 1;
+}
+
+/* Main container */
+#main-container {
+    width: 100%;
+    height: 100%;
+    padding: 1 2;
+}
+
+/* Title and subtitle */
+.title {
+    text-style: bold;
+    color: $accent;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+.subtitle {
+    color: $text-muted;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+/* Section titles */
+.section-title {
+    text-style: bold;
+    color: $secondary;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.section-subtitle {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+/* Labels */
+.label {
+    width: 20;
+    padding-right: 1;
+}
+
+/* Dataset selector */
+DatasetSelector {
+    height: 10;
+    border: solid $primary;
+    margin-bottom: 1;
+}
+
+/* Server configuration */
+.server-config-row {
+    margin-bottom: 1;
+}
+
+.server-config-label {
+    width: 20;
+    padding-right: 1;
+}
+
+.server-config-buttons {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.connection-status {
+    margin-top: 1;
+    margin-bottom: 1;
+    height: 1;
+}
+
+/* Sync options */
+.sync-option-row {
+    margin-bottom: 1;
+}
+
+.sync-option-label {
+    width: 20;
+    padding-right: 1;
+}
+
+.sync-option-buttons {
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* Progress display */
+.progress-header {
+    margin-bottom: 1;
+}
+
+.progress-row {
+    margin-bottom: 1;
+}
+
+.progress-label {
+    width: 20;
+    padding-right: 1;
+}
+
+.progress-value {
+    width: 30;
+}
+
+.log-header {
+    text-style: bold;
+    color: $secondary;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+#progress-log {
+    height: 15;
+    border: solid $primary;
+}
+
+/* Saved configurations */
+.saved-config-item {
+    border: solid $primary;
+    padding: 1;
+    margin-bottom: 1;
+}
+
+.saved-config-name {
+    width: 1fr;
+}
+
+.load-config-button {
+    width: 10;
+}
+
+.saved-config-detail {
+    color: $text-muted;
+}
+
+.empty-message {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+/* Buttons */
+Button {
+    margin-right: 1;
+}
+
+/* Tabs */
+TabbedContent {
+    height: 100%;
+}
+
+TabPane {
+    padding: 1;
+}

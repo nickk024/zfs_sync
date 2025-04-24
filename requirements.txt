@@ -1,7 +1,10 @@
 # Core dependencies
-toml
+textual>=0.27.0  # TUI framework
+paramiko>=2.12.0  # SSH client library
 
-# TUI Framework
-textual
-
-# Add other dependencies here as needed (e.g., paramiko, apscheduler)
+# Development dependencies
+pytest>=7.3.1  # Testing framework
+black>=23.3.0  # Code formatter
+isort>=5.12.0  # Import sorter
+mypy>=1.3.0  # Type checker
+pylint>=2.17.4  # Linter
